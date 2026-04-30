@@ -29,6 +29,7 @@ test-suite plan-json-test
   hs-source-dirs:   test, src
   other-modules:
       Hgs.Domain
+      Hgs.Extract
       Hgs.Input.PlanJson
   default-language: GHC2021
   ghc-options:      -Wall
@@ -36,6 +37,8 @@ test-suite plan-json-test
       base            >=4.16 && <5
     , aeson
     , bytestring
+    , containers
     , hspec
+    , QuickCheck
     , text
     , vector

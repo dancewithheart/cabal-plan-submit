@@ -20,6 +20,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Hgs.Domain
   ( PackageName(..)
+  , RawPkgSrc(..)
   , RawPlan(..)
   , RawPlanItem(..)
   , UnitId(..)
@@ -39,6 +40,12 @@ instance FromJSON RawPlan where
       <*> o .:? "compiler-id"
       <*> o .:? "install-plan" .!= []
 
+instance FromJSON RawPkgSrc where
+  parseJSON = withObject "RawPkgSrc" $ \o ->
+    RawPkgSrc
+      <$> o .:? "type"
+      <*> o .:? "path"
+
 instance FromJSON RawPlanItem where
   parseJSON = withObject "RawPlanItem" $ \o ->
     RawPlanItem
@@ -47,6 +54,7 @@ instance FromJSON RawPlanItem where
       <*> (fmap PackageName <$> o .:? "pkg-name")
       <*> (fmap Version <$> o .:? "pkg-version")
       <*> (fmap UnitId <$> (o .:? "depends" .!= []))
+      <*> o .:? "pkg-src"
 
 summariseRawPlan :: RawPlan -> String
 summariseRawPlan plan =
@@ -67,6 +75,7 @@ summariseRawPlanItem item =
     , "name="    <> renderMaybeText (unPackageName <$> rawPlanItemPkgName item)
     , "version=" <> renderMaybeText (unVersion <$> rawPlanItemPkgVersion item)
     , "deps="    <> show (length (rawPlanItemDepends item))
+    , "pkg-src=" <> renderMaybeText (rawPkgSrcType =<< rawPlanItemPkgSrc item)
     ]
 
 renderMaybeText :: Maybe Text -> String
