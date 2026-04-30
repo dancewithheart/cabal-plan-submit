@@ -1,11 +1,17 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Main (main) where
 
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict qualified as Map
+import Data.List (zipWith4)
 import Data.Set qualified as Set
-import Data.Text qualified
+import Data.Text qualified as Text
+import Data.Time.Clock (UTCTime(..), secondsToDiffTime)
 import Hgs.Domain
   ( Package(..)
   , PackageName(..)
@@ -17,8 +23,12 @@ import Hgs.Domain
   , UnitId(..)
   , Version(..)
   )
-import Hgs.Extract (extractPlanGraph, extractPlanGraph)
+import Hgs.Extract (extractPlanGraph)
 import Hgs.Input.PlanJson (decodeRawPlan)
+import Hgs.Snapshot
+  ( SnapshotInput(..)
+  , snapshotFromPlanGraph
+  )
 import Test.Hspec
 import Test.QuickCheck
 
@@ -129,6 +139,19 @@ main = hspec $ do
     it "keeps only dependency edges to known packages" $
       property prop_extractGraphKeepsKnownTargets
 
+  describe "snapshotFromPlanGraph" $ do
+    it "emits only external packages in resolved" $ do
+      let graph = simpleGraph
+          value = Aeson.toJSON (snapshotFromPlanGraph snapshotInput graph)
+          manifests = valueKey "manifests" value
+          manifest = valueKey "cabal-project" manifests
+          resolved = valueKey "resolved" manifest
+
+      KeyMap.size (expectObject resolved) `shouldBe` 3
+
+    it "keeps resolved dependency references inside resolved keys" $
+      property prop_snapshotDependenciesStayInsideResolved
+
 prop_extractGraphKeepsKnownTargets :: SimplePlan -> Bool
 prop_extractGraphKeepsKnownTargets (SimplePlan rawPlan) =
   all depsKnown (Map.elems (planGraphPackages graph))
@@ -138,6 +161,36 @@ prop_extractGraphKeepsKnownTargets (SimplePlan rawPlan) =
 
   depsKnown pkg =
     packageDepends pkg `Set.isSubsetOf` known
+
+prop_snapshotDependenciesStayInsideResolved :: SimplePlan -> Bool
+prop_snapshotDependenciesStayInsideResolved (SimplePlan rawPlan) =
+  all depsKnown resolvedEntries
+ where
+  graph = extractPlanGraph rawPlan
+  value = Aeson.toJSON (snapshotFromPlanGraph snapshotInput graph)
+  manifests = valueKey "manifests" value
+  manifest = valueKey "cabal-project" manifests
+  resolved = expectObject (valueKey "resolved" manifest)
+  resolvedKeys =
+    Set.fromList
+      [ Key.toText k
+      | k <- KeyMap.keys resolved
+      ]
+  resolvedEntries =
+    KeyMap.elems resolved
+
+  depsKnown entry =
+    case entry of
+      Aeson.Object o ->
+        case KeyMap.lookup "dependencies" o of
+          Just (Aeson.Array arr) ->
+            all (\case Aeson.String t -> t `Set.member` resolvedKeys; _ -> False) arr
+          Nothing ->
+            False
+          _ ->
+            False
+      _ ->
+        False
 
 newtype SimplePlan = SimplePlan RawPlan
   deriving stock (Show)
@@ -182,18 +235,79 @@ mkItem unitId deps isLocal n =
 unknownUnitId :: UnitId
 unknownUnitId = UnitId "unknown-9.9.9"
 
-toText :: String -> Data.Text.Text
-toText = Data.Text.pack
+toText :: String -> Text.Text
+toText = Text.pack
 
-zipWith4 :: (a -> b -> c -> d -> e) -> [a] -> [b] -> [c] -> [d] -> [e]
-zipWith4 f as bs cs ds =
-  [ f a b c d
-  | (a, b, c, d) <- zip4 as bs cs ds
-  ]
+simpleGraph :: PlanGraph
+simpleGraph =
+  extractPlanGraph $
+    RawPlan
+      { rawPlanCabalVersion = Nothing
+      , rawPlanCompilerId = Nothing
+      , rawPlanItems =
+          [ RawPlanItem
+              { rawPlanItemType = Just "configured"
+              , rawPlanItemId = Just (UnitId "mypkg-0.1.0.0-inplace")
+              , rawPlanItemPkgName = Just (PackageName "mypkg")
+              , rawPlanItemPkgVersion = Just (Version "0.1.0.0")
+              , rawPlanItemDepends = [UnitId "aeson-2.2.4.1", UnitId "text-2.0.2"]
+              , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
+              }
+          , RawPlanItem
+              { rawPlanItemType = Just "configured"
+              , rawPlanItemId = Just (UnitId "aeson-2.2.4.1")
+              , rawPlanItemPkgName = Just (PackageName "aeson")
+              , rawPlanItemPkgVersion = Just (Version "2.2.4.1")
+              , rawPlanItemDepends = [UnitId "bytestring-0.11.5.3", UnitId "text-2.0.2"]
+              , rawPlanItemPkgSrc = Nothing
+              }
+          , RawPlanItem
+              { rawPlanItemType = Just "configured"
+              , rawPlanItemId = Just (UnitId "text-2.0.2")
+              , rawPlanItemPkgName = Just (PackageName "text")
+              , rawPlanItemPkgVersion = Just (Version "2.0.2")
+              , rawPlanItemDepends = [UnitId "bytestring-0.11.5.3"]
+              , rawPlanItemPkgSrc = Nothing
+              }
+          , RawPlanItem
+              { rawPlanItemType = Just "configured"
+              , rawPlanItemId = Just (UnitId "bytestring-0.11.5.3")
+              , rawPlanItemPkgName = Just (PackageName "bytestring")
+              , rawPlanItemPkgVersion = Just (Version "0.11.5.3")
+              , rawPlanItemDepends = []
+              , rawPlanItemPkgSrc = Nothing
+              }
+          ]
+      }
 
-zip4 :: [a] -> [b] -> [c] -> [d] -> [(a, b, c, d)]
-zip4 as bs cs ds =
-  [ (a, b, c, d)
-  | (((a, b), c), d) <- zip (zip (zip as bs) cs) ds
-  ]
+snapshotInput :: SnapshotInput
+snapshotInput =
+  SnapshotInput
+    { snapshotSha = "0123456789abcdef0123456789abcdef01234567"
+    , snapshotRef = "refs/heads/main"
+    , snapshotScannedAt = UTCTime (toEnum 0) (secondsToDiffTime 0)
+    , snapshotJobId = "manual"
+    , snapshotCorrelator = "manual"
+    , snapshotManifestKey = "cabal-project"
+    , snapshotManifestName = "cabal project"
+    , snapshotManifestPath = Just "cabal.project"
+    , snapshotDetectorName = "cabal-plan-submit"
+    , snapshotDetectorVersion = "0.1.0.1"
+    , snapshotDetectorUrl = "https://github.com/"
+    }
 
+valueKey :: Text.Text -> Aeson.Value -> Aeson.Value
+valueKey key =
+  \case
+    Aeson.Object o ->
+      case KeyMap.lookup (Key.fromText key) o of
+        Just v -> v
+        Nothing -> error ("missing key: " <> Text.unpack key)
+    _ ->
+      error "expected object"
+
+expectObject :: Aeson.Value -> KeyMap.KeyMap Aeson.Value
+expectObject =
+  \case
+    Aeson.Object o -> o
+    _ -> error "expected object"

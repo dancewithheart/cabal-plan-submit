@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               cabal-plan-submit
-version:            0.1.0.1
+version:            0.1.0.2
 build-type:         Simple
 license:            MIT
 license-file:       LICENSE
@@ -12,6 +12,7 @@ executable cabal-plan-submit
   other-modules:
     Hgs.Domain
     Hgs.Extract
+    Hgs.Snapshot
     Hgs.Input.PlanJson
   ghc-options:      -Wall
   build-depends:
@@ -22,6 +23,7 @@ executable cabal-plan-submit
     , directory
     , filepath
     , text
+    , time
     , vector
 
 test-suite plan-json-test
@@ -32,6 +34,7 @@ test-suite plan-json-test
       Hgs.Domain
       Hgs.Extract
       Hgs.Input.PlanJson
+      Hgs.Snapshot
   default-language: GHC2021
   ghc-options:      -Wall
   build-depends:
@@ -42,4 +45,5 @@ test-suite plan-json-test
     , hspec
     , QuickCheck
     , text
+    , time
     , vector

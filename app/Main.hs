@@ -1,8 +1,18 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Main (main) where
 
+import Data.ByteString.Lazy.Char8 qualified as LBS8
+import Data.Text qualified as Text
+import Data.Time.Clock (getCurrentTime)
 import Hgs.Domain (RawPlan)
 import Hgs.Extract (extractPlanGraph, summarisePlanGraph)
 import Hgs.Input.PlanJson (readRawPlan, summariseRawPlan)
+import Hgs.Snapshot
+  ( SnapshotInput(..)
+  , encodeSnapshot
+  , snapshotFromPlanGraph
+  )
 import System.Directory (doesFileExist)
 import System.Environment (getArgs)
 import System.Exit (die)
@@ -15,6 +25,8 @@ main = do
       inspectPlan path
     ["inspect-graph", path] ->
       inspectGraph path
+    ["render-snapshot", path, sha, ref] ->
+      renderSnapshot path sha ref
     _ ->
       die usage
 
@@ -28,7 +40,30 @@ inspectGraph path = do
   plan <- readPlanOrDie path
   putStrLn (summarisePlanGraph (extractPlanGraph plan))
 
-readPlanOrDie :: FilePath -> IO Hgs.Domain.RawPlan
+renderSnapshot :: FilePath -> String -> String -> IO ()
+renderSnapshot path sha ref = do
+  plan <- readPlanOrDie path
+  scannedAt <- getCurrentTime
+  manifestPath <- detectManifestPath
+  let input =
+        SnapshotInput
+          { snapshotSha = Text.pack sha
+          , snapshotRef = Text.pack ref
+          , snapshotScannedAt = scannedAt
+          , snapshotJobId = "github-actions"
+          , snapshotCorrelator = "dependency-submission"
+          , snapshotManifestKey = "cabal-project"
+          , snapshotManifestName = "cabal project"
+          , snapshotManifestPath = manifestPath
+          , snapshotDetectorName = "cabal-plan-submit"
+          , snapshotDetectorVersion = "0.1.0.2"
+          , snapshotDetectorUrl = "https://github.com/dancewithheart/cabal-plan-submit"
+          }
+      snapshot =
+        snapshotFromPlanGraph input (extractPlanGraph plan)
+  LBS8.putStrLn (encodeSnapshot snapshot)
+
+readPlanOrDie :: FilePath -> IO RawPlan
 readPlanOrDie path = do
   exists <- doesFileExist path
   if not exists
@@ -40,6 +75,14 @@ readPlanOrDie path = do
           die ("failed to parse plan.json: " <> err)
         Right plan ->
           pure plan
+
+detectManifestPath :: IO (Maybe FilePath)
+detectManifestPath = do
+  cabalProjectExists <- doesFileExist "cabal.project"
+  pure $
+    if cabalProjectExists
+      then Just "cabal.project"
+      else Nothing
 
 missingPlanMessage :: FilePath -> String
 missingPlanMessage path =
@@ -58,6 +101,7 @@ usage :: String
 usage =
   unlines
     [ "Usage:"
-    , "  cabal-plan-submit inspect-plan  PATH_TO_PLAN_JSON"
+    , "  cabal-plan-submit inspect-plan PATH_TO_PLAN_JSON"
     , "  cabal-plan-submit inspect-graph PATH_TO_PLAN_JSON"
+    , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
     ]

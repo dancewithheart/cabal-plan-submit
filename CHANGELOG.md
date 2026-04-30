@@ -15,3 +15,11 @@
 * Filter dependency edges to known package ids only.
 * Add graph tests, including a property that extracted dependency edges only point to known package ids.
 * Improve missing `plan.json` error with a hint to run `cabal build all`.
+
+## 0.1.0.2 -- 2026-05-01
+
+* Add `render-snapshot` for producing GitHub dependency submission snapshot JSON.
+* Emit one synthetic `cabal-project` manifest containing resolved external Hackage packages.
+* Encode package dependencies as `pkg:hackage/<name>@<version>` PURLs.
+* Set detector metadata for `cabal-plan-submit`.
+* Improve README examples to use real `sha` / `ref` values and avoid Cabal build logs in redirected snapshot output.
