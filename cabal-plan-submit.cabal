@@ -1,16 +1,17 @@
 cabal-version:      3.0
-name:               cabal-plan-to-github-snapshot
-version:            0.1.0.0
+name:               cabal-plan-submit
+version:            0.1.0.1
 build-type:         Simple
 license:            MIT
 license-file:       LICENSE
 
-executable cabal-plan-to-github-snapshot
+executable cabal-plan-submit
   main-is:          Main.hs
   hs-source-dirs:   app, src
   default-language: GHC2021
   other-modules:
     Hgs.Domain
+    Hgs.Extract
     Hgs.Input.PlanJson
   ghc-options:      -Wall
   build-depends:

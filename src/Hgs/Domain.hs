@@ -27,7 +27,7 @@ newtype UnitId = UnitId { unUnitId :: Text }
   deriving stock (Eq, Ord, Show)
 
 data RawPkgSrc = RawPkgSrc
-  { rawPkgSrcType :: Maybe Text
+  { rawPkgSrcKind :: Maybe Text
   , rawPkgSrcPath :: Maybe FilePath
   }
   deriving stock (Eq, Show)

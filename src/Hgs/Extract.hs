@@ -1,5 +1,4 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
 
 module Hgs.Extract
   ( extractPlanGraph
@@ -9,23 +8,22 @@ module Hgs.Extract
 import Data.Foldable (foldl')
 import Data.List (intercalate)
 import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
-import qualified Data.Set as Set
-import Data.Text (Text)
-import qualified Data.Text as T
+import Data.Set qualified as Set
+import Data.Text qualified as Text
 import Hgs.Domain
   ( Package(..)
   , PackageName(..)
   , PackageSource(..)
   , PlanGraph(..)
+  , RawPkgSrc(rawPkgSrcKind)
   , RawPlan(..)
   , RawPlanItem(..)
   , UnitId(..)
   , Version(..)
   )
-import Hgs.Domain (rawPkgSrcType)
 
 extractPlanGraph :: RawPlan -> PlanGraph
 extractPlanGraph rawPlan =
@@ -98,15 +96,9 @@ toCompleteItem item = do
 
 classifySource :: RawPlanItem -> PackageSource
 classifySource item =
-  case rawPkgSrcTypeText item of
-    Just "local" -> PackageLocal
+  case rawPkgSrcKind =<< rawPlanItemPkgSrc item of
+    Just t | t == Text.pack "local" -> PackageLocal
     _            -> PackageExternal
-
-rawPkgSrcTypeText :: RawPlanItem -> Maybe Text
-rawPkgSrcTypeText =
-  fmap rawPkgSrcTypeText' . rawPlanItemPkgSrc
- where
-  rawPkgSrcTypeText' src = rawPkgSrcType src
 
 summarisePlanGraph :: PlanGraph -> String
 summarisePlanGraph graph =
@@ -136,9 +128,9 @@ summarisePackage :: Package -> String
 summarisePackage pkg =
   intercalate
     ", "
-    [ "id=" <> T.unpack (unUnitId (packageUnitId pkg))
-    , "name=" <> T.unpack (unPackageName (packageName pkg))
-    , "version=" <> T.unpack (unVersion (packageVersion pkg))
+    [ "id=" <> Text.unpack (unUnitId (packageUnitId pkg))
+    , "name=" <> Text.unpack (unPackageName (packageName pkg))
+    , "version=" <> Text.unpack (unVersion (packageVersion pkg))
     , "source=" <> showSource (packageSource pkg)
     , "direct=" <> show (packageIsDirect pkg)
     , "deps=" <> show (Set.size (packageDepends pkg))
@@ -150,4 +142,8 @@ showSource = \case
   PackageExternal -> "external"
 
 countBy :: (a -> Bool) -> [a] -> Int
-countBy p = foldl' (\n a -> if p a then n + 1 else n) 0
+countBy p = foldl' step 0
+ where
+  step n a
+    | p a = n + 1
+    | otherwise = n

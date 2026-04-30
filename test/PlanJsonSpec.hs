@@ -17,7 +17,6 @@ import Hgs.Domain
   , UnitId(..)
   , Version(..)
   )
-import Hgs.Domain (rawPlanCompilerId, rawPlanItems)
 import Hgs.Extract (extractPlanGraph, extractPlanGraph)
 import Hgs.Input.PlanJson (decodeRawPlan)
 import Test.Hspec
@@ -155,7 +154,7 @@ instance Arbitrary SimplePlan where
           { rawPlanCabalVersion = Nothing
           , rawPlanCompilerId = Nothing
           , rawPlanItems =
-              zipWith3 mkItem unitIds depLists localFlags [1 :: Int ..]
+              zipWith4 mkItem unitIds depLists localFlags [1 :: Int ..]
           }
 
 genBaseName :: Gen String
@@ -185,3 +184,16 @@ unknownUnitId = UnitId "unknown-9.9.9"
 
 toText :: String -> Data.Text.Text
 toText = Data.Text.pack
+
+zipWith4 :: (a -> b -> c -> d -> e) -> [a] -> [b] -> [c] -> [d] -> [e]
+zipWith4 f as bs cs ds =
+  [ f a b c d
+  | (a, b, c, d) <- zip4 as bs cs ds
+  ]
+
+zip4 :: [a] -> [b] -> [c] -> [d] -> [(a, b, c, d)]
+zip4 as bs cs ds =
+  [ (a, b, c, d)
+  | (((a, b), c), d) <- zip (zip (zip as bs) cs) ds
+  ]
+
