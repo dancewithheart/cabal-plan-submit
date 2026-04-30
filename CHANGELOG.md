@@ -23,3 +23,6 @@
 * Encode package dependencies as `pkg:hackage/<name>@<version>` PURLs.
 * Set detector metadata for `cabal-plan-submit`.
 * Improve README examples to use real `sha` / `ref` values and avoid Cabal build logs in redirected snapshot output.
+
+## 0.1.0.3 -- 2026-05-01
+* Add `validate-snapshot`

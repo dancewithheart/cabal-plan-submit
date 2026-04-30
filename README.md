@@ -29,6 +29,13 @@ SNAPSHOT_BIN="$(cabal list-bin exe:cabal-plan-submit)"
 "$SNAPSHOT_BIN" render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > snapshot.json
 ```
 
+Validate snapshot:
+```sh
+cabal run cabal-plan-submit -- validate-snapshot snapshot.json
+```
+
+Manual validation:
+
 Sanity check top-level fields:
 ```sh
 jq '{version, sha, ref, job, detector, scanned, manifests: (.manifests | keys)}' snapshot.json

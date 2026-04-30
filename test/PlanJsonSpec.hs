@@ -2,16 +2,14 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Main (main) where
+module PlanJsonSpec (spec) where
 
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict qualified as Map
-import Data.List (zipWith4)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
-import Data.Time.Clock (UTCTime(..), secondsToDiffTime)
 import Hgs.Domain
   ( Package(..)
   , PackageName(..)
@@ -26,14 +24,14 @@ import Hgs.Domain
 import Hgs.Extract (extractPlanGraph)
 import Hgs.Input.PlanJson (decodeRawPlan)
 import Hgs.Snapshot
-  ( SnapshotInput(..)
-  , snapshotFromPlanGraph
+  ( snapshotFromPlanGraph
   )
 import Test.Hspec
 import Test.QuickCheck
+import TestSupport (SimplePlan(..), expectObject, simpleGraph, snapshotInput, valueKey)
 
-main :: IO ()
-main = hspec $ do
+spec :: Spec
+spec = do
   describe "decodeRawPlan" $ do
     it "parses a minimal plan with one install-plan entry" $ do
       let input =
@@ -191,123 +189,3 @@ prop_snapshotDependenciesStayInsideResolved (SimplePlan rawPlan) =
             False
       _ ->
         False
-
-newtype SimplePlan = SimplePlan RawPlan
-  deriving stock (Show)
-
-instance Arbitrary SimplePlan where
-  arbitrary = do
-    names <- listOf1 genBaseName
-    let unitIds = mkUnitIds names
-    depLists <- vectorOf (length unitIds) (listOf (elements (unknownUnitId : unitIds)))
-    localFlags <- vectorOf (length unitIds) arbitrary
-    pure $
-      SimplePlan $
-        RawPlan
-          { rawPlanCabalVersion = Nothing
-          , rawPlanCompilerId = Nothing
-          , rawPlanItems =
-              zipWith4 mkItem unitIds depLists localFlags [1 :: Int ..]
-          }
-
-genBaseName :: Gen String
-genBaseName =
-  listOf1 (elements ['a' .. 'z'])
-
-mkUnitIds :: [String] -> [UnitId]
-mkUnitIds =
-  map (\n -> UnitId (toText (n <> "-1.0.0")))
-
-mkItem :: UnitId -> [UnitId] -> Bool -> Int -> RawPlanItem
-mkItem unitId deps isLocal n =
-  RawPlanItem
-    { rawPlanItemType = Just "configured"
-    , rawPlanItemId = Just unitId
-    , rawPlanItemPkgName = Just (PackageName (toText ("pkg" <> show n)))
-    , rawPlanItemPkgVersion = Just (Version "1.0.0")
-    , rawPlanItemDepends = deps
-    , rawPlanItemPkgSrc =
-        if isLocal
-          then Just (RawPkgSrc (Just "local") (Just "."))
-          else Nothing
-    }
-
-unknownUnitId :: UnitId
-unknownUnitId = UnitId "unknown-9.9.9"
-
-toText :: String -> Text.Text
-toText = Text.pack
-
-simpleGraph :: PlanGraph
-simpleGraph =
-  extractPlanGraph $
-    RawPlan
-      { rawPlanCabalVersion = Nothing
-      , rawPlanCompilerId = Nothing
-      , rawPlanItems =
-          [ RawPlanItem
-              { rawPlanItemType = Just "configured"
-              , rawPlanItemId = Just (UnitId "mypkg-0.1.0.0-inplace")
-              , rawPlanItemPkgName = Just (PackageName "mypkg")
-              , rawPlanItemPkgVersion = Just (Version "0.1.0.0")
-              , rawPlanItemDepends = [UnitId "aeson-2.2.4.1", UnitId "text-2.0.2"]
-              , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
-              }
-          , RawPlanItem
-              { rawPlanItemType = Just "configured"
-              , rawPlanItemId = Just (UnitId "aeson-2.2.4.1")
-              , rawPlanItemPkgName = Just (PackageName "aeson")
-              , rawPlanItemPkgVersion = Just (Version "2.2.4.1")
-              , rawPlanItemDepends = [UnitId "bytestring-0.11.5.3", UnitId "text-2.0.2"]
-              , rawPlanItemPkgSrc = Nothing
-              }
-          , RawPlanItem
-              { rawPlanItemType = Just "configured"
-              , rawPlanItemId = Just (UnitId "text-2.0.2")
-              , rawPlanItemPkgName = Just (PackageName "text")
-              , rawPlanItemPkgVersion = Just (Version "2.0.2")
-              , rawPlanItemDepends = [UnitId "bytestring-0.11.5.3"]
-              , rawPlanItemPkgSrc = Nothing
-              }
-          , RawPlanItem
-              { rawPlanItemType = Just "configured"
-              , rawPlanItemId = Just (UnitId "bytestring-0.11.5.3")
-              , rawPlanItemPkgName = Just (PackageName "bytestring")
-              , rawPlanItemPkgVersion = Just (Version "0.11.5.3")
-              , rawPlanItemDepends = []
-              , rawPlanItemPkgSrc = Nothing
-              }
-          ]
-      }
-
-snapshotInput :: SnapshotInput
-snapshotInput =
-  SnapshotInput
-    { snapshotSha = "0123456789abcdef0123456789abcdef01234567"
-    , snapshotRef = "refs/heads/main"
-    , snapshotScannedAt = UTCTime (toEnum 0) (secondsToDiffTime 0)
-    , snapshotJobId = "manual"
-    , snapshotCorrelator = "manual"
-    , snapshotManifestKey = "cabal-project"
-    , snapshotManifestName = "cabal project"
-    , snapshotManifestPath = Just "cabal.project"
-    , snapshotDetectorName = "cabal-plan-submit"
-    , snapshotDetectorVersion = "0.1.0.1"
-    , snapshotDetectorUrl = "https://github.com/"
-    }
-
-valueKey :: Text.Text -> Aeson.Value -> Aeson.Value
-valueKey key =
-  \case
-    Aeson.Object o ->
-      case KeyMap.lookup (Key.fromText key) o of
-        Just v -> v
-        Nothing -> error ("missing key: " <> Text.unpack key)
-    _ ->
-      error "expected object"
-
-expectObject :: Aeson.Value -> KeyMap.KeyMap Aeson.Value
-expectObject =
-  \case
-    Aeson.Object o -> o
-    _ -> error "expected object"

@@ -13,9 +13,14 @@ import Hgs.Snapshot
   , encodeSnapshot
   , snapshotFromPlanGraph
   )
+import Hgs.Validate
+  ( isValid
+  , renderValidationReport
+  , validateSnapshotFile
+  )
 import System.Directory (doesFileExist)
 import System.Environment (getArgs)
-import System.Exit (die)
+import System.Exit (die, exitFailure)
 
 main :: IO ()
 main = do
@@ -27,6 +32,8 @@ main = do
       inspectGraph path
     ["render-snapshot", path, sha, ref] ->
       renderSnapshot path sha ref
+    ["validate-snapshot", path] ->
+      validateSnapshot path
     _ ->
       die usage
 
@@ -56,12 +63,25 @@ renderSnapshot path sha ref = do
           , snapshotManifestName = "cabal project"
           , snapshotManifestPath = manifestPath
           , snapshotDetectorName = "cabal-plan-submit"
-          , snapshotDetectorVersion = "0.1.0.2"
+          , snapshotDetectorVersion = "0.1.0.1"
           , snapshotDetectorUrl = "https://github.com/dancewithheart/cabal-plan-submit"
           }
       snapshot =
         snapshotFromPlanGraph input (extractPlanGraph plan)
   LBS8.putStrLn (encodeSnapshot snapshot)
+
+validateSnapshot :: FilePath -> IO ()
+validateSnapshot path = do
+  result <- validateSnapshotFile path
+  case result of
+    Left err ->
+      die ("failed to parse snapshot.json: " <> err)
+    Right errs
+      | isValid errs ->
+          putStrLn (renderValidationReport errs)
+      | otherwise -> do
+          putStrLn (renderValidationReport errs)
+          exitFailure
 
 readPlanOrDie :: FilePath -> IO RawPlan
 readPlanOrDie path = do
@@ -104,4 +124,5 @@ usage =
     , "  cabal-plan-submit inspect-plan PATH_TO_PLAN_JSON"
     , "  cabal-plan-submit inspect-graph PATH_TO_PLAN_JSON"
     , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
+    , "  cabal-plan-submit validate-snapshot PATH_TO_SNAPSHOT_JSON"
     ]
