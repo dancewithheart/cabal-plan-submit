@@ -33,3 +33,10 @@
 * Check that packages do not list their own `package_url` as a dependency.
 * Check for duplicate dependency entries per package.
 * Print an explicit validation report showing which checks were run.
+
+## 0.1.0.4 -- 2026-05-01
+
+* Add `--help` and `--version`.
+* Use Cabal package version as the detector version in generated snapshots.
+* Add `inspect-deprecated` for reporting deprecated Hackage packages from `deprecated.yaml`.
+* Support `commercialhaskell/all-cabal-metadata` `deprecated.yaml` list format.

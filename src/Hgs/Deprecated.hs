@@ -57,6 +57,13 @@ readDeprecationIndex path = do
 deprecationIndexFromValue :: Value -> Either String (Map PackageName Deprecation)
 deprecationIndexFromValue =
   \case
+    Array xs ->
+      Right $
+        Map.fromList
+          [ (deprecationPackage dep, dep)
+          | dep <- mapMaybe deprecationEntryFromValue (Vector.toList xs)
+          ]
+
     Object o ->
       Right $
         Map.fromList
@@ -65,8 +72,27 @@ deprecationIndexFromValue =
           , let pkgName = PackageName (Key.toText key)
           , dep <- maybeToList (deprecationFromValue pkgName value)
           ]
+
     _ ->
-      Left "deprecated.yaml: expected top-level YAML object"
+      Left "deprecated.yaml: expected top-level YAML array or object"
+
+deprecationEntryFromValue :: Value -> Maybe Deprecation
+deprecationEntryFromValue =
+  \case
+    Object o -> do
+      pkgText <- textField "deprecated-package" o
+      let pkgName = PackageName pkgText
+      pure $
+        Deprecation
+          { deprecationPackage = pkgName
+          , deprecationReplacement =
+              replacementFromObject o
+          , deprecationReason =
+              reasonFromObject o
+          }
+
+    _ ->
+      Nothing
 
 deprecationFromValue :: PackageName -> Value -> Maybe Deprecation
 deprecationFromValue pkgName value =
