@@ -7,8 +7,10 @@ import Data.Text qualified as Text
 import Hgs.Deprecated
   ( DeprecatedPackage(..)
   , Deprecation(..)
+  , FailOnDeprecated(..)
   , findDeprecatedPackages
   , renderDeprecatedPackages
+  , shouldFailOnDeprecated
   )
 import Hgs.Domain
   ( PackageName(..)
@@ -70,6 +72,22 @@ spec = do
       output `shouldContain` "replacements:"
       output `shouldContain` "- json-a"
       output `shouldContain` "- json-b"
+  describe "shouldFailOnDeprecated" $ do
+    it "does not fail by default" $ do
+      let deps = findDeprecatedPackages deprecatedAeson simpleGraph
+      shouldFailOnDeprecated FailOnNone deps `shouldBe` False
+
+    it "fails on any deprecated dependency with FailOnAny" $ do
+      let deps = findDeprecatedPackages deprecatedAeson simpleGraph
+      shouldFailOnDeprecated FailOnAny deps `shouldBe` True
+
+    it "fails on direct deprecated dependency with FailOnDirect" $ do
+      let deps = findDeprecatedPackages deprecatedAeson simpleGraph
+      shouldFailOnDeprecated FailOnDirect deps `shouldBe` True
+
+    it "does not fail on indirect deprecated dependency with FailOnDirect" $ do
+      let deps = findDeprecatedPackages deprecatedBytestring simpleGraph
+      shouldFailOnDeprecated FailOnDirect deps `shouldBe` False
 
 deprecatedNameVersion :: DeprecatedPackage -> (String, String)
 deprecatedNameVersion dep =
@@ -84,3 +102,27 @@ showPackageName (PackageName name) =
 showVersion :: Version -> String
 showVersion (Version version) =
   Text.unpack version
+
+deprecatedAeson :: Map.Map PackageName Deprecation
+deprecatedAeson =
+  Map.fromList
+    [ ( PackageName "aeson"
+      , Deprecation
+          { deprecationPackage = PackageName "aeson"
+          , deprecationReplacements = [PackageName "json-future"]
+          , deprecationReason = Nothing
+          }
+      )
+    ]
+
+deprecatedBytestring :: Map.Map PackageName Deprecation
+deprecatedBytestring =
+  Map.fromList
+    [ ( PackageName "bytestring"
+      , Deprecation
+          { deprecationPackage = PackageName "bytestring"
+          , deprecationReplacements = []
+          , deprecationReason = Nothing
+          }
+      )
+    ]

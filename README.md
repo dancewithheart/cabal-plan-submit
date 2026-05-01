@@ -104,6 +104,12 @@ jobs:
 After successful build data should apperar in `Insights` -> `Dependency graph` in `ecosystem:other`
 e.g. as [in here](https://github.com/dancewithheart/agda2scala/network/dependencies?q=ecosystem%3Aother)
 
+Fail CI on deprecated dependencies:
+
+```sh
+cabal-plan-submit inspect-deprecated --fail-on direct dist-newstyle/cache/plan.json deprecated.yaml
+```
+
 ## Usage
 
 Inspect local project

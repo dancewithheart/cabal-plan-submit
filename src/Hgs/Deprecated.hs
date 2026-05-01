@@ -5,9 +5,11 @@
 module Hgs.Deprecated
   ( Deprecation(..)
   , DeprecatedPackage(..)
+  , FailOnDeprecated(..)
   , readDeprecationIndex
   , findDeprecatedPackages
   , renderDeprecatedPackages
+  , shouldFailOnDeprecated
   ) where
 
 import Data.Aeson (Value(..))
@@ -49,6 +51,12 @@ data DeprecatedPackage = DeprecatedPackage
   , deprecatedReason         :: Maybe Text
   , deprecatedPath           :: Maybe PackagePath
   }
+  deriving stock (Eq, Show)
+
+data FailOnDeprecated
+  = FailOnNone
+  | FailOnDirect
+  | FailOnAny
   deriving stock (Eq, Show)
 
 readDeprecationIndex :: FilePath -> IO (Either String (Map PackageName Deprecation))
@@ -223,6 +231,21 @@ findDeprecatedPackages index graph =
       , packageSource pkg == PackageExternal
       , dep <- maybeToList (Map.lookup (packageName pkg) index)
       ]
+
+shouldFailOnDeprecated :: FailOnDeprecated -> [DeprecatedPackage] -> Bool
+shouldFailOnDeprecated policy deps =
+  case policy of
+    FailOnNone ->
+      False
+
+    FailOnAny ->
+      not (null deps)
+
+    FailOnDirect ->
+      any isDirect deps
+ where
+  isDirect dep =
+    deprecatedRelationship dep == "direct"
 
 renderDeprecatedPackages :: [DeprecatedPackage] -> String
 renderDeprecatedPackages deps =

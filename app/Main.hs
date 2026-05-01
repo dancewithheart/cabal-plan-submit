@@ -1,16 +1,20 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Main (main) where
 
+import Control.Monad (when)
 import Data.ByteString.Lazy.Char8 qualified as LBS8
 import Data.List (isSuffixOf, sort)
 import Data.Text qualified as Text
 import Data.Time.Clock (getCurrentTime)
 import Data.Version (showVersion)
 import Hgs.Deprecated
-  ( findDeprecatedPackages
+  ( FailOnDeprecated(..)
+  , findDeprecatedPackages
   , readDeprecationIndex
   , renderDeprecatedPackages
+  , shouldFailOnDeprecated
   )
 import Hgs.Domain (RawPlan)
 import Hgs.Extract (extractPlanGraph, summarisePlanGraph)
@@ -31,6 +35,7 @@ import Paths_cabal_plan_submit qualified as Paths
 import System.Directory (doesFileExist, listDirectory)
 import System.Environment (getArgs)
 import System.Exit (die, exitFailure)
+import System.IO (hPutStrLn, stderr)
 
 main :: IO ()
 main = do
@@ -51,7 +56,13 @@ main = do
     ["validate-snapshot", path] ->
       validateSnapshot path
     ["inspect-deprecated", planPath, deprecatedPath] ->
-      inspectDeprecated planPath deprecatedPath
+      inspectDeprecated FailOnNone planPath deprecatedPath
+    ["inspect-deprecated", "--fail-on", failOn, planPath, deprecatedPath] ->
+      case parseFailOnDeprecated failOn of
+        Nothing ->
+          die ("unknown --fail-on value: " <> failOn <> "\nExpected one of: none, direct, any")
+        Just policy ->
+          inspectDeprecated policy planPath deprecatedPath
     ["why", path, packageName] ->
       whyPackage path packageName
     _ ->
@@ -141,17 +152,31 @@ missingPlanMessage path =
     , "  cabal-plan-submit inspect-plan dist-newstyle/cache/plan.json"
     ]
 
-inspectDeprecated :: FilePath -> FilePath -> IO ()
-inspectDeprecated planPath deprecatedPath = do
+inspectDeprecated :: FailOnDeprecated -> FilePath -> FilePath -> IO ()
+inspectDeprecated failOn planPath deprecatedPath = do
   plan <- readPlanOrDie planPath
   eIndex <- readDeprecationIndex deprecatedPath
   case eIndex of
-    Left err ->
-      die ("failed to parse deprecated metadata: " <> err)
-    Right index ->
-      putStr $
-        renderDeprecatedPackages
-          (findDeprecatedPackages index (extractPlanGraph plan))
+    Left err -> die ("failed to parse deprecated metadata: " <> err)
+    Right index -> do
+      let deprecated = findDeprecatedPackages index (extractPlanGraph plan)
+      putStr (renderDeprecatedPackages deprecated)
+      when (shouldFailOnDeprecated failOn deprecated) $ do
+        hPutStrLn stderr (failOnMessage failOn)
+        exitFailure
+
+parseFailOnDeprecated :: String -> Maybe FailOnDeprecated
+parseFailOnDeprecated = \case
+  "none"   -> Just FailOnNone
+  "direct" -> Just FailOnDirect
+  "any"    -> Just FailOnAny
+  _        -> Nothing
+
+failOnMessage :: FailOnDeprecated -> String
+failOnMessage = \case
+  FailOnNone   -> ""
+  FailOnDirect -> "deprecated direct dependencies found"
+  FailOnAny    -> "deprecated dependencies found"
 
 whyPackage :: FilePath -> String -> IO ()
 whyPackage path packageName = do
@@ -172,5 +197,6 @@ usage =
     , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
     , "  cabal-plan-submit validate-snapshot PATH_TO_SNAPSHOT_JSON"
     , "  cabal-plan-submit inspect-deprecated PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
+    , "  cabal-plan-submit inspect-deprecated --fail-on none|direct|any PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     , "  cabal-plan-submit why PATH_TO_PLAN_JSON PACKAGE_NAME"
     ]

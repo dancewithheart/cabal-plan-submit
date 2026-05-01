@@ -59,8 +59,9 @@
 * Report direct vs indirect relationship for deprecated packages.
 
 ## 0.1.0.7 -- 2026-05-01
-* update example yaml for Github Actions
-* move Aeson instances to fix warning
+* update example yaml for Github Actions.
+* move Aeson instances to fix warning.
 
 ## 0.1.0.8 -- 2026-05-01
-* fix for empty file.source_location
+* fix for empty file.source_location.
+* Add `inspect-deprecated --fail-on none|direct|any`.
