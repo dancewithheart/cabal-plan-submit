@@ -40,3 +40,12 @@
 * Use Cabal package version as the detector version in generated snapshots.
 * Add `inspect-deprecated` for reporting deprecated Hackage packages from `deprecated.yaml`.
 * Support `commercialhaskell/all-cabal-metadata` `deprecated.yaml` list format.
+
+## 0.1.0.5 -- 2026-05-01
+
+* Add `why` command for explaining why a package appears in the Cabal dependency graph.
+* Show shortest dependency paths from local packages to a target package.
+* Extend `inspect-deprecated` with `used by path` output for each deprecated package.
+* Make deprecated-package reports actionable by showing which local package chain pulls in the deprecated dependency.
+* Add support for `commercialhaskell/all-cabal-metadata` `deprecated.yaml` list format.
+

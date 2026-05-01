@@ -27,6 +27,7 @@ import Hgs.Domain
   , PlanGraph(..)
   , Version(..)
   )
+import Hgs.Why (PackagePath, shortestPathsToPackage, renderPackagePath)
 
 data Deprecation = Deprecation
   { deprecationPackage     :: PackageName
@@ -41,6 +42,7 @@ data DeprecatedPackage = DeprecatedPackage
   , deprecatedRelationship   :: Text
   , deprecatedReplacement    :: Maybe PackageName
   , deprecatedReason         :: Maybe Text
+  , deprecatedPath :: Maybe PackagePath
   }
   deriving stock (Eq, Show)
 
@@ -219,6 +221,8 @@ findDeprecatedPackages index graph =
                 deprecationReplacement dep
             , deprecatedReason =
                 deprecationReason dep
+            , deprecatedPath =
+                listToMaybe (shortestPathsToPackage (packageName pkg) graph)
             }
         )
       | pkg <- Map.elems (planGraphPackages graph)
@@ -244,6 +248,7 @@ renderDeprecatedPackage dep =
   , "    replacement: " <> maybe "<none>" packageNameText (deprecatedReplacement dep)
   ]
     <> maybe [] (\r -> ["    reason: " <> Text.unpack r]) (deprecatedReason dep)
+    <> maybe [] (\path -> ["    used by path: " <> renderPackagePath path]) (deprecatedPath dep)
 
 packageNameText :: PackageName -> String
 packageNameText =

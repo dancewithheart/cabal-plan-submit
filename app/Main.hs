@@ -24,6 +24,8 @@ import Hgs.Validate
   , renderValidationReport
   , validateSnapshotFile
   )
+import Hgs.Domain (PackageName(..))
+import Hgs.Why (renderWhy)
 import Paths_cabal_plan_submit qualified as Paths
 import System.Directory (doesFileExist)
 import System.Environment (getArgs)
@@ -49,6 +51,8 @@ main = do
       validateSnapshot path
     ["inspect-deprecated", planPath, deprecatedPath] ->
       inspectDeprecated planPath deprecatedPath
+    ["why", path, packageName] ->
+      whyPackage path packageName
     _ ->
       die usage
 
@@ -144,6 +148,14 @@ inspectDeprecated planPath deprecatedPath = do
         renderDeprecatedPackages
           (findDeprecatedPackages index (extractPlanGraph plan))
 
+whyPackage :: FilePath -> String -> IO ()
+whyPackage path packageName = do
+  plan <- readPlanOrDie path
+  putStr $
+    renderWhy
+      (PackageName (Text.pack packageName))
+      (extractPlanGraph plan)
+
 usage :: String
 usage =
   unlines
@@ -155,4 +167,5 @@ usage =
     , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
     , "  cabal-plan-submit validate-snapshot PATH_TO_SNAPSHOT_JSON"
     , "  cabal-plan-submit inspect-deprecated PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
+    , "  cabal-plan-submit why PATH_TO_PLAN_JSON PACKAGE_NAME"
     ]

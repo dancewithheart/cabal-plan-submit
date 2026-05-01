@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               cabal-plan-submit
-version:            0.1.0.4
+version:            0.1.0.5
 build-type:         Simple
 license:            MIT
 license-file:       LICENSE
@@ -16,6 +16,7 @@ executable cabal-plan-submit
     Hgs.Snapshot
     Hgs.Validate
     Hgs.Input.PlanJson
+    Hgs.Why
     Paths_cabal_plan_submit
   ghc-options:      -Wall
   build-depends:
