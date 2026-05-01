@@ -25,4 +25,11 @@
 * Improve README examples to use real `sha` / `ref` values and avoid Cabal build logs in redirected snapshot output.
 
 ## 0.1.0.3 -- 2026-05-01
-* Add `validate-snapshot`
+
+* Add `validate-snapshot` command for local snapshot sanity checks.
+* Validate required GitHub snapshot fields before submission.
+* Check that manifests contain resolved dependency objects.
+* Check resolved dependency closure: every dependency reference must point to another resolved package.
+* Check that packages do not list their own `package_url` as a dependency.
+* Check for duplicate dependency entries per package.
+* Print an explicit validation report showing which checks were run.
