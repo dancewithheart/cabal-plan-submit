@@ -3,6 +3,7 @@
 module Main (main) where
 
 import Data.ByteString.Lazy.Char8 qualified as LBS8
+import Data.List (isSuffixOf, sort)
 import Data.Text qualified as Text
 import Data.Time.Clock (getCurrentTime)
 import Data.Version (showVersion)
@@ -27,7 +28,7 @@ import Hgs.Validate
 import Hgs.Domain (PackageName(..))
 import Hgs.Why (renderWhy)
 import Paths_cabal_plan_submit qualified as Paths
-import System.Directory (doesFileExist)
+import System.Directory (doesFileExist, listDirectory)
 import System.Environment (getArgs)
 import System.Exit (die, exitFailure)
 
