@@ -118,10 +118,14 @@ readPlanOrDie path = do
 detectManifestPath :: IO (Maybe FilePath)
 detectManifestPath = do
   cabalProjectExists <- doesFileExist "cabal.project"
-  pure $
-    if cabalProjectExists
-      then Just "cabal.project"
-      else Nothing
+  if cabalProjectExists
+    then pure (Just "cabal.project")
+    else do
+      files <- listDirectory "."
+      pure $
+        case sort (filter (isSuffixOf ".cabal") files) of
+          cabalFile : _ -> Just cabalFile
+          [] -> Nothing
 
 missingPlanMessage :: FilePath -> String
 missingPlanMessage path =

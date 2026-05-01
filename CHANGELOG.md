@@ -61,3 +61,6 @@
 ## 0.1.0.7 -- 2026-05-01
 * update example yaml for Github Actions
 * move Aeson instances to fix warning
+
+## 0.1.0.8 -- 2026-05-01
+* fix for empty file.source_location

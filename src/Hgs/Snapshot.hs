@@ -120,7 +120,7 @@ manifestFromGraph :: SnapshotInput -> PlanGraph -> Manifest
 manifestFromGraph input graph =
   Manifest
     { manifestName = snapshotManifestName input
-    , manifestFilePath = snapshotManifestPath input
+    , manifestFilePath = snapshotManifestPath input >>= nonEmptyPath
     , manifestResolved =
         Map.fromList
           [ (unPurl (packagePurl pkg), resolvedFromPackage purlByUnitId externalUnitIds pkg)
@@ -146,6 +146,11 @@ manifestFromGraph input graph =
       [ (packageUnitId pkg, packagePurl pkg)
       | pkg <- externalPackages
       ]
+
+nonEmptyPath :: FilePath -> Maybe FilePath
+nonEmptyPath path
+  | null path = Nothing
+  | otherwise = Just path
 
 resolvedFromPackage :: Map UnitId Purl -> Set.Set UnitId -> Package -> Resolved
 resolvedFromPackage purlByUnitId externalUnitIds pkg =
