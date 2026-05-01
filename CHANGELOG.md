@@ -65,3 +65,4 @@
 ## 0.1.0.8 -- 2026-05-01
 * fix for empty file.source_location.
 * Add `inspect-deprecated --fail-on none|direct|any`.
+* Add `inspect-locals` to list locally defined stanza.

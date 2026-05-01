@@ -13,6 +13,7 @@ executable cabal-plan-submit
     Hgs.Deprecated
     Hgs.Domain
     Hgs.Extract
+    Hgs.Locals
     Hgs.Snapshot
     Hgs.Validate
     Hgs.Input.PlanJson
@@ -40,12 +41,14 @@ test-suite plan-json-test
       Hgs.Domain
       Hgs.Extract
       Hgs.Input.PlanJson
+      Hgs.Locals
       Hgs.Snapshot
       Hgs.Validate
       Hgs.Why
       DeprecatedSpec
       PlanJsonSpec
       SnapshotSpec
+      LocalsSpec
       TestSupport
   default-language: GHC2021
   ghc-options:      -Wall

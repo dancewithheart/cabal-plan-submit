@@ -19,6 +19,10 @@ import Hgs.Deprecated
 import Hgs.Domain (RawPlan)
 import Hgs.Extract (extractPlanGraph, summarisePlanGraph)
 import Hgs.Input.PlanJson (readRawPlan, summariseRawPlan)
+import Hgs.Locals
+  ( inspectLocals
+  , renderLocals
+  )
 import Hgs.Snapshot
   ( SnapshotInput(..)
   , encodeSnapshot
@@ -65,6 +69,8 @@ main = do
           inspectDeprecated policy planPath deprecatedPath
     ["why", path, packageName] ->
       whyPackage path packageName
+    ["inspect-locals", path] ->
+      inspectLocalPackages path
     _ ->
       die usage
 
@@ -186,6 +192,13 @@ whyPackage path packageName = do
       (PackageName (Text.pack packageName))
       (extractPlanGraph plan)
 
+inspectLocalPackages :: FilePath -> IO ()
+inspectLocalPackages path = do
+  plan <- readPlanOrDie path
+  putStr $
+    renderLocals
+      (inspectLocals (extractPlanGraph plan))
+
 usage :: String
 usage =
   unlines
@@ -194,6 +207,7 @@ usage =
     , "  cabal-plan-submit --version"
     , "  cabal-plan-submit inspect-plan PATH_TO_PLAN_JSON"
     , "  cabal-plan-submit inspect-graph PATH_TO_PLAN_JSON"
+    , "  cabal-plan-submit inspect-locals PATH_TO_PLAN_JSON"
     , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
     , "  cabal-plan-submit validate-snapshot PATH_TO_SNAPSHOT_JSON"
     , "  cabal-plan-submit inspect-deprecated PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
