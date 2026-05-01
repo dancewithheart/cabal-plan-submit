@@ -19,6 +19,7 @@ cabal-plan-submit render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > 
 
 ## Integration on Github Action
 
+To run this action on Github you can use yaml ([example](https://github.com/dancewithheart/agda2scala/blob/main/.github/workflows/submit-deps.yaml)):
 ```yaml
 name: Dependency submission
 
@@ -36,8 +37,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout target project
         uses: actions/checkout@v6
+        with:
+          path: project
+
+      - name: Checkout cabal-plan-submit
+        uses: actions/checkout@v6
+        with:
+          repository: dancewithheart/cabal-plan-submit
+          path: cabal-plan-submit
 
       - name: Setup Haskell
         uses: haskell-actions/setup@v2
@@ -45,20 +54,23 @@ jobs:
           ghc-version: "9.6.7"
           cabal-version: "3.14"
 
-      - name: Build project
+      - name: Build target project
+        working-directory: project
         run: cabal build all
 
       - name: Build cabal-plan-submit
+        working-directory: cabal-plan-submit
         run: cabal build exe:cabal-plan-submit
 
       - name: Render snapshot
+        working-directory: project
         env:
           SHA: ${{ github.sha }}
           REF: ${{ github.ref }}
         run: |
-          BIN="$(cabal list-bin exe:cabal-plan-submit)"
-          "$BIN" render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > snapshot.json
-          jq '{version, sha, ref, manifests: (.manifests | keys)}' snapshot.json
+          BIN="$(cd ../cabal-plan-submit && cabal list-bin exe:cabal-plan-submit)"
+          "$BIN" render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > ../snapshot.json
+          "$BIN" validate-snapshot ../snapshot.json
 
       - name: Submit snapshot
         env:
@@ -68,15 +80,29 @@ jobs:
           owner="${REPO%/*}"
           repo="${REPO#*/}"
 
-          curl \
-            --fail-with-body \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/$owner/$repo/dependency-graph/snapshots" \
-            --data-binary @snapshot.json
+          response="$(
+            curl \
+              --fail-with-body \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/$owner/$repo/dependency-graph/snapshots" \
+              --data-binary @snapshot.json
+          )"
+
+          echo "$response" | jq .
+
+          snapshot_id="$(echo "$response" | jq -r '.id')"
+          snapshot_url="https://api.github.com/repos/$owner/$repo/dependency-graph/snapshots/$snapshot_id"
+
+          echo "Snapshot API URL: $snapshot_url"
+          echo "Snapshot result: $(echo "$response" | jq -r '.result')"
+          echo "Snapshot message: $(echo "$response" | jq -r '.message')"
 ```
+
+After successful build data should apperar in `Insights` -> `Dependency graph` in `ecosystem:other`
+e.g. as [in here](https://github.com/dancewithheart/agda2scala/network/dependencies?q=ecosystem%3Aother)
 
 ## Usage
 

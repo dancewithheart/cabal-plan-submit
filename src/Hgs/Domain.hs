@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Hgs.Domain
   ( PackageName(..)
@@ -12,6 +13,13 @@ module Hgs.Domain
   , Package(..)
   , PlanGraph(..)
   ) where
+
+import Data.Aeson
+  ( FromJSON(parseJSON)
+  , withObject
+  , (.:?)
+  , (.!=)
+  )
 
 import Data.Map.Strict (Map)
 import Data.Set (Set)
@@ -69,3 +77,27 @@ data PlanGraph = PlanGraph
   , planGraphLocals   :: Set UnitId
   }
   deriving stock (Eq, Show)
+
+instance FromJSON RawPlan where
+  parseJSON = withObject "RawPlan" $ \o ->
+    RawPlan
+      <$> o .:? "cabal-lib-version"
+      <*> o .:? "compiler-id"
+      <*> o .:? "install-plan" .!= []
+
+instance FromJSON RawPkgSrc where
+  parseJSON = withObject "RawPkgSrc" $ \o ->
+    RawPkgSrc
+      <$> o .:? "type"
+      <*> o .:? "path"
+
+instance FromJSON RawPlanItem where
+  parseJSON = withObject "RawPlanItem" $ \o ->
+    RawPlanItem
+      <$> o .:? "type"
+      <*> (fmap UnitId <$> o .:? "id")
+      <*> (fmap PackageName <$> o .:? "pkg-name")
+      <*> (fmap Version <$> o .:? "pkg-version")
+      <*> (fmap UnitId <$> (o .:? "depends" .!= []))
+      <*> o .:? "pkg-src"
+

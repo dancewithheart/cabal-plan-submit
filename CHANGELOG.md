@@ -58,3 +58,6 @@
 * Extend `inspect-deprecated` with `used by path` output, making deprecated dependency reports actionable.
 * Report direct vs indirect relationship for deprecated packages.
 
+## 0.1.0.7 -- 2026-05-01
+* update example yaml for Github Actions
+* move Aeson instances to fix warning
