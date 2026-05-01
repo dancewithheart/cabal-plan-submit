@@ -13,6 +13,7 @@ module Hgs.Deprecated
 import Data.Aeson (Value(..))
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.List (nub)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, listToMaybe, mapMaybe)
@@ -27,12 +28,16 @@ import Hgs.Domain
   , PlanGraph(..)
   , Version(..)
   )
-import Hgs.Why (PackagePath, shortestPathsToPackage, renderPackagePath)
+import Hgs.Why
+  ( PackagePath
+  , renderPackagePath
+  , shortestPathsToPackage
+  )
 
 data Deprecation = Deprecation
-  { deprecationPackage     :: PackageName
-  , deprecationReplacement :: Maybe PackageName
-  , deprecationReason      :: Maybe Text
+  { deprecationPackage      :: PackageName
+  , deprecationReplacements :: [PackageName]
+  , deprecationReason       :: Maybe Text
   }
   deriving stock (Eq, Show)
 
@@ -40,9 +45,9 @@ data DeprecatedPackage = DeprecatedPackage
   { deprecatedPackageName    :: PackageName
   , deprecatedPackageVersion :: Version
   , deprecatedRelationship   :: Text
-  , deprecatedReplacement    :: Maybe PackageName
+  , deprecatedReplacements   :: [PackageName]
   , deprecatedReason         :: Maybe Text
-  , deprecatedPath :: Maybe PackagePath
+  , deprecatedPath           :: Maybe PackagePath
   }
   deriving stock (Eq, Show)
 
@@ -87,8 +92,8 @@ deprecationEntryFromValue =
       pure $
         Deprecation
           { deprecationPackage = pkgName
-          , deprecationReplacement =
-              replacementFromObject o
+          , deprecationReplacements =
+              replacementsFromObject o
           , deprecationReason =
               reasonFromObject o
           }
@@ -103,25 +108,26 @@ deprecationFromValue pkgName value =
       Nothing
 
     Null ->
-      Just (Deprecation pkgName Nothing Nothing)
+      Just (Deprecation pkgName [] Nothing)
 
     Bool True ->
-      Just (Deprecation pkgName Nothing Nothing)
+      Just (Deprecation pkgName [] Nothing)
 
     String t ->
       Just $
         Deprecation
           { deprecationPackage = pkgName
-          , deprecationReplacement = replacementFromText t
-          , deprecationReason = reasonFromText t
+          , deprecationReplacements =
+              maybeToList (replacementFromText t)
+          , deprecationReason = Nothing
           }
 
     Array xs ->
       Just $
         Deprecation
           { deprecationPackage = pkgName
-          , deprecationReplacement =
-              PackageName <$> firstReplacementText (Vector.toList xs)
+          , deprecationReplacements =
+              PackageName <$> replacementTextsFromValues (Vector.toList xs)
           , deprecationReason = Nothing
           }
 
@@ -129,28 +135,30 @@ deprecationFromValue pkgName value =
       Just $
         Deprecation
           { deprecationPackage = pkgName
-          , deprecationReplacement = replacementFromObject o
+          , deprecationReplacements = replacementsFromObject o
           , deprecationReason = reasonFromObject o
           }
 
     Number _ ->
       Nothing
 
-replacementFromObject :: KeyMap.KeyMap Value -> Maybe PackageName
-replacementFromObject o =
+replacementsFromObject :: KeyMap.KeyMap Value -> [PackageName]
+replacementsFromObject o =
   PackageName <$>
-    firstJust
-      [ textField "replacement" o
-      , textField "replaced-by" o
-      , textField "replaced_by" o
-      , textField "in-favour-of" o
-      , textField "in-favor-of" o
-      , firstReplacementText =<< arrayField "replacement" o
-      , firstReplacementText =<< arrayField "replacements" o
-      , firstReplacementText =<< arrayField "replaced-by" o
-      , firstReplacementText =<< arrayField "in-favour-of" o
-      , firstReplacementText =<< arrayField "in-favor-of" o
-      ]
+    nub
+      ( concat
+          [ maybeToList (textField "replacement" o)
+          , maybeToList (textField "replaced-by" o)
+          , maybeToList (textField "replaced_by" o)
+          , maybeToList (textField "in-favour-of" o)
+          , maybeToList (textField "in-favor-of" o)
+          , maybe [] replacementTextsFromValues (arrayField "replacement" o)
+          , maybe [] replacementTextsFromValues (arrayField "replacements" o)
+          , maybe [] replacementTextsFromValues (arrayField "replaced-by" o)
+          , maybe [] replacementTextsFromValues (arrayField "in-favour-of" o)
+          , maybe [] replacementTextsFromValues (arrayField "in-favor-of" o)
+          ]
+      )
 
 reasonFromObject :: KeyMap.KeyMap Value -> Maybe Text
 reasonFromObject o =
@@ -162,26 +170,12 @@ reasonFromObject o =
 
 replacementFromText :: Text -> Maybe PackageName
 replacementFromText t
-  | normalized `elem` ["deprecated", "true", "yes"] =
-      Nothing
-  | Text.null normalized =
-      Nothing
-  | otherwise =
-      Just (PackageName normalized)
- where
-  normalized =
-    Text.strip t
-
-reasonFromText :: Text -> Maybe Text
-reasonFromText t
-  | replacementFromText t == Nothing = Nothing
+  | isReplacementLike t = Just (PackageName (Text.strip t))
   | otherwise = Nothing
 
-firstReplacementText :: [Value] -> Maybe Text
-firstReplacementText =
-  listToMaybe
-    . filter isReplacementLike
-    . mapMaybe valueText
+replacementTextsFromValues :: [Value] -> [Text]
+replacementTextsFromValues =
+  nub . filter isReplacementLike . mapMaybe valueText
 
 isReplacementLike :: Text -> Bool
 isReplacementLike t =
@@ -217,8 +211,8 @@ findDeprecatedPackages index graph =
             , deprecatedPackageVersion = packageVersion pkg
             , deprecatedRelationship =
                 if packageIsDirect pkg then "direct" else "indirect"
-            , deprecatedReplacement =
-                deprecationReplacement dep
+            , deprecatedReplacements =
+                deprecationReplacements dep
             , deprecatedReason =
                 deprecationReason dep
             , deprecatedPath =
@@ -245,10 +239,23 @@ renderDeprecatedPackage :: DeprecatedPackage -> [String]
 renderDeprecatedPackage dep =
   [ "  " <> packageNameText (deprecatedPackageName dep) <> "-" <> versionText (deprecatedPackageVersion dep)
   , "    relationship: " <> Text.unpack (deprecatedRelationship dep)
-  , "    replacement: " <> maybe "<none>" packageNameText (deprecatedReplacement dep)
   ]
+    <> renderReplacements (deprecatedReplacements dep)
     <> maybe [] (\r -> ["    reason: " <> Text.unpack r]) (deprecatedReason dep)
     <> maybe [] (\path -> ["    used by path: " <> renderPackagePath path]) (deprecatedPath dep)
+
+renderReplacements :: [PackageName] -> [String]
+renderReplacements replacements =
+  case replacements of
+    [] ->
+      ["    replacements: <none>"]
+
+    [one] ->
+      ["    replacement: " <> packageNameText one]
+
+    many ->
+      "    replacements:"
+        : map (\pkg -> "      - " <> packageNameText pkg) many
 
 packageNameText :: PackageName -> String
 packageNameText =

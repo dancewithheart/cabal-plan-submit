@@ -8,7 +8,7 @@ module Hgs.Why
   , renderPackagePath
   ) where
 
-import Data.List (intercalate)
+import Data.List (intercalate, nub)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Sequence (Seq((:<|)), (|>))
@@ -31,7 +31,7 @@ newtype PackagePath = PackagePath
 
 shortestPathsToPackage :: PackageName -> PlanGraph -> [PackagePath]
 shortestPathsToPackage target graph =
-  mapMaybe pathToLocalRoot roots
+  nub (mapMaybe pathToLocalRoot roots)
  where
   packages =
     planGraphPackages graph

@@ -26,7 +26,7 @@ spec = do
               [ ( PackageName "aeson"
                 , Deprecation
                     { deprecationPackage = PackageName "aeson"
-                    , deprecationReplacement = Just (PackageName "json-future")
+                    , deprecationReplacements = [PackageName "json-future"]
                     , deprecationReason = Nothing
                     }
                 )
@@ -41,7 +41,7 @@ spec = do
               [ ( PackageName "aeson"
                 , Deprecation
                     { deprecationPackage = PackageName "aeson"
-                    , deprecationReplacement = Just (PackageName "json-future")
+                    , deprecationReplacements = [PackageName "json-future"]
                     , deprecationReason = Nothing
                     }
                 )
@@ -49,6 +49,27 @@ spec = do
 
       renderDeprecatedPackages (findDeprecatedPackages index simpleGraph)
         `shouldContain` "replacement: json-future"
+
+    it "renders multiple replacements when available" $ do
+      let index =
+            Map.fromList
+              [ ( PackageName "aeson"
+                , Deprecation
+                    { deprecationPackage = PackageName "aeson"
+                    , deprecationReplacements =
+                        [ PackageName "json-a"
+                        , PackageName "json-b"
+                        ]
+                    , deprecationReason = Nothing
+                    }
+                )
+              ]
+
+      let output = renderDeprecatedPackages (findDeprecatedPackages index simpleGraph)
+
+      output `shouldContain` "replacements:"
+      output `shouldContain` "- json-a"
+      output `shouldContain` "- json-b"
 
 deprecatedNameVersion :: DeprecatedPackage -> (String, String)
 deprecatedNameVersion dep =

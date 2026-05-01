@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               cabal-plan-submit
-version:            0.1.0.5
+version:            0.1.0.6
 build-type:         Simple
 license:            MIT
 license-file:       LICENSE
@@ -42,6 +42,7 @@ test-suite plan-json-test
       Hgs.Input.PlanJson
       Hgs.Snapshot
       Hgs.Validate
+      Hgs.Why
       DeprecatedSpec
       PlanJsonSpec
       SnapshotSpec
