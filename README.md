@@ -17,7 +17,7 @@ cabal-plan-submit why dist-newstyle/cache/plan.json cryptonite
 cabal-plan-submit render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > snapshot.json
 ```
 
-## Integration on Github Action
+## Use in Github Action
 
 To run this action on Github you can use yaml ([example](https://github.com/dancewithheart/agda2scala/blob/main/.github/workflows/submit-deps.yaml)):
 ```yaml
@@ -151,6 +151,12 @@ curl -L \
 cabal run cabal-plan-submit -- inspect-deprecated dist-newstyle/cache/plan.json deprecated.yaml
 cabal run cabal-plan-submit -- inspect-deprecated "$PROJECT_PATH/dist-newstyle/cache/plan.json" deprecated.yaml
 ```
+
+## Relationship to Renovate / Dependabot / cabal-audit
+
+- `Renovate` can update declared `.cabal` dependency bounds.
+- `cabal-audit` checks known Haskell security advisories.
+- `cabal-plan-submit` works from Cabal's solved `plan.json`, submits the exact resolved graph to GitHub, and explains deprecated dependencies with paths.
 
 ## Working with code
 
