@@ -62,3 +62,9 @@ cabal run cabal-plan-submit -- inspect-deprecated dist-newstyle/cache/plan.json 
 cabal run cabal-plan-submit -- inspect-deprecated "$PROJECT_PATH/dist-newstyle/cache/plan.json" deprecated.yaml
 ```
 
+## Version
+
+```sh
+cabal run cabal-plan-submit -- --version
+```
+

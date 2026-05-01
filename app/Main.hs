@@ -5,12 +5,13 @@ module Main (main) where
 import Data.ByteString.Lazy.Char8 qualified as LBS8
 import Data.Text qualified as Text
 import Data.Time.Clock (getCurrentTime)
-import Hgs.Domain (RawPlan)
+import Data.Version (showVersion)
 import Hgs.Deprecated
   ( findDeprecatedPackages
   , readDeprecationIndex
   , renderDeprecatedPackages
   )
+import Hgs.Domain (RawPlan)
 import Hgs.Extract (extractPlanGraph, summarisePlanGraph)
 import Hgs.Input.PlanJson (readRawPlan, summariseRawPlan)
 import Hgs.Snapshot
@@ -23,6 +24,7 @@ import Hgs.Validate
   , renderValidationReport
   , validateSnapshotFile
   )
+import Paths_cabal_plan_submit qualified as Paths
 import System.Directory (doesFileExist)
 import System.Environment (getArgs)
 import System.Exit (die, exitFailure)
@@ -31,6 +33,12 @@ main :: IO ()
 main = do
   args <- getArgs
   case args of
+    ["--help"] ->
+      putStr usage
+    ["-h"] ->
+      putStr usage
+    ["--version"] ->
+      putStrLn ("cabal-plan-submit " <> showVersion Paths.version)
     ["inspect-plan", path] ->
       inspectPlan path
     ["inspect-graph", path] ->
@@ -70,7 +78,7 @@ renderSnapshot path sha ref = do
           , snapshotManifestName = "cabal project"
           , snapshotManifestPath = manifestPath
           , snapshotDetectorName = "cabal-plan-submit"
-          , snapshotDetectorVersion = "0.1.0.3"
+          , snapshotDetectorVersion = Text.pack (showVersion Paths.version)
           , snapshotDetectorUrl = "https://github.com/dancewithheart/cabal-plan-submit"
           }
       snapshot =
@@ -140,6 +148,8 @@ usage :: String
 usage =
   unlines
     [ "Usage:"
+    , "  cabal-plan-submit --help"
+    , "  cabal-plan-submit --version"
     , "  cabal-plan-submit inspect-plan PATH_TO_PLAN_JSON"
     , "  cabal-plan-submit inspect-graph PATH_TO_PLAN_JSON"
     , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"

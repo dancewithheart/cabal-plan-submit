@@ -16,6 +16,7 @@ executable cabal-plan-submit
     Hgs.Snapshot
     Hgs.Validate
     Hgs.Input.PlanJson
+    Paths_cabal_plan_submit
   ghc-options:      -Wall
   build-depends:
       base            >=4.16 && <5
@@ -31,7 +32,7 @@ executable cabal-plan-submit
 
 test-suite plan-json-test
   type:             exitcode-stdio-1.0
-  main-is:          Main.hs
+  main-is:          Tests.hs
   hs-source-dirs:   test, src
   other-modules:
       Hgs.Deprecated
