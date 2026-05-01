@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               cabal-plan-submit
-version:            0.1.0.3
+version:            0.1.0.4
 build-type:         Simple
 license:            MIT
 license-file:       LICENSE
@@ -10,6 +10,7 @@ executable cabal-plan-submit
   hs-source-dirs:   app, src
   default-language: GHC2021
   other-modules:
+    Hgs.Deprecated
     Hgs.Domain
     Hgs.Extract
     Hgs.Snapshot
@@ -26,17 +27,20 @@ executable cabal-plan-submit
     , text
     , time
     , vector
+    , yaml
 
 test-suite plan-json-test
   type:             exitcode-stdio-1.0
   main-is:          Main.hs
   hs-source-dirs:   test, src
   other-modules:
+      Hgs.Deprecated
       Hgs.Domain
       Hgs.Extract
       Hgs.Input.PlanJson
       Hgs.Snapshot
       Hgs.Validate
+      DeprecatedSpec
       PlanJsonSpec
       SnapshotSpec
       TestSupport
@@ -52,3 +56,4 @@ test-suite plan-json-test
     , text
     , time
     , vector
+    , yaml

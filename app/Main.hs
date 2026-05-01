@@ -6,6 +6,11 @@ import Data.ByteString.Lazy.Char8 qualified as LBS8
 import Data.Text qualified as Text
 import Data.Time.Clock (getCurrentTime)
 import Hgs.Domain (RawPlan)
+import Hgs.Deprecated
+  ( findDeprecatedPackages
+  , readDeprecationIndex
+  , renderDeprecatedPackages
+  )
 import Hgs.Extract (extractPlanGraph, summarisePlanGraph)
 import Hgs.Input.PlanJson (readRawPlan, summariseRawPlan)
 import Hgs.Snapshot
@@ -34,6 +39,8 @@ main = do
       renderSnapshot path sha ref
     ["validate-snapshot", path] ->
       validateSnapshot path
+    ["inspect-deprecated", planPath, deprecatedPath] ->
+      inspectDeprecated planPath deprecatedPath
     _ ->
       die usage
 
@@ -63,7 +70,7 @@ renderSnapshot path sha ref = do
           , snapshotManifestName = "cabal project"
           , snapshotManifestPath = manifestPath
           , snapshotDetectorName = "cabal-plan-submit"
-          , snapshotDetectorVersion = "0.1.0.1"
+          , snapshotDetectorVersion = "0.1.0.3"
           , snapshotDetectorUrl = "https://github.com/dancewithheart/cabal-plan-submit"
           }
       snapshot =
@@ -117,6 +124,18 @@ missingPlanMessage path =
     , "  cabal-plan-submit inspect-plan dist-newstyle/cache/plan.json"
     ]
 
+inspectDeprecated :: FilePath -> FilePath -> IO ()
+inspectDeprecated planPath deprecatedPath = do
+  plan <- readPlanOrDie planPath
+  eIndex <- readDeprecationIndex deprecatedPath
+  case eIndex of
+    Left err ->
+      die ("failed to parse deprecated metadata: " <> err)
+    Right index ->
+      putStr $
+        renderDeprecatedPackages
+          (findDeprecatedPackages index (extractPlanGraph plan))
+
 usage :: String
 usage =
   unlines
@@ -125,4 +144,5 @@ usage =
     , "  cabal-plan-submit inspect-graph PATH_TO_PLAN_JSON"
     , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
     , "  cabal-plan-submit validate-snapshot PATH_TO_SNAPSHOT_JSON"
+    , "  cabal-plan-submit inspect-deprecated PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     ]
