@@ -14,6 +14,7 @@ executable cabal-plan-submit
     Hgs.Domain
     Hgs.Extract
     Hgs.Locals
+    Hgs.LocalUnitFilter
     Hgs.Snapshot
     Hgs.Validate
     Hgs.Input.PlanJson
@@ -42,6 +43,7 @@ test-suite plan-json-test
       Hgs.Extract
       Hgs.Input.PlanJson
       Hgs.Locals
+      Hgs.LocalUnitFilter
       Hgs.Snapshot
       Hgs.Validate
       Hgs.Why

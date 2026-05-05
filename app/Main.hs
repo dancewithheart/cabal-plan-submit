@@ -11,7 +11,7 @@ import Data.Time.Clock (getCurrentTime)
 import Data.Version (showVersion)
 import Hgs.Deprecated
   ( FailOnDeprecated(..)
-  , findDeprecatedPackages
+  , findDeprecatedPackagesFrom
   , readDeprecationIndex
   , renderDeprecatedPackages
   , shouldFailOnDeprecated
@@ -35,6 +35,9 @@ import Hgs.Validate
   )
 import Hgs.Domain (PackageName(..))
 import Hgs.Why (renderWhy)
+import Hgs.LocalUnitFilter
+  ( LocalUnitFilter(..)
+  )
 import Paths_cabal_plan_submit qualified as Paths
 import System.Directory (doesFileExist, listDirectory)
 import System.Environment (getArgs)
@@ -60,13 +63,21 @@ main = do
     ["validate-snapshot", path] ->
       validateSnapshot path
     ["inspect-deprecated", planPath, deprecatedPath] ->
-      inspectDeprecated FailOnNone planPath deprecatedPath
+      inspectDeprecated AllLocalUnits FailOnNone planPath deprecatedPath
     ["inspect-deprecated", "--fail-on", failOn, planPath, deprecatedPath] ->
       case parseFailOnDeprecated failOn of
         Nothing ->
           die ("unknown --fail-on value: " <> failOn <> "\nExpected one of: none, direct, any")
         Just policy ->
-          inspectDeprecated policy planPath deprecatedPath
+          inspectDeprecated AllLocalUnits policy planPath deprecatedPath
+    ["inspect-deprecated", "--production-only", planPath, deprecatedPath] ->
+      inspectDeprecated ProductionLocalUnits FailOnNone planPath deprecatedPath
+    ["inspect-deprecated", "--production-only", "--fail-on", failOn, planPath, deprecatedPath] ->
+      case parseFailOnDeprecated failOn of
+        Nothing ->
+          die ("unknown --fail-on value: " <> failOn <> "\nExpected one of: none, direct, any")
+        Just policy ->
+          inspectDeprecated ProductionLocalUnits policy planPath deprecatedPath
     ["why", path, packageName] ->
       whyPackage path packageName
     ["inspect-locals", path] ->
@@ -158,14 +169,14 @@ missingPlanMessage path =
     , "  cabal-plan-submit inspect-plan dist-newstyle/cache/plan.json"
     ]
 
-inspectDeprecated :: FailOnDeprecated -> FilePath -> FilePath -> IO ()
-inspectDeprecated failOn planPath deprecatedPath = do
+inspectDeprecated :: LocalUnitFilter -> FailOnDeprecated -> FilePath -> FilePath -> IO ()
+inspectDeprecated localFilter failOn planPath deprecatedPath = do
   plan <- readPlanOrDie planPath
   eIndex <- readDeprecationIndex deprecatedPath
   case eIndex of
     Left err -> die ("failed to parse deprecated metadata: " <> err)
     Right index -> do
-      let deprecated = findDeprecatedPackages index (extractPlanGraph plan)
+      let deprecated = findDeprecatedPackagesFrom localFilter index (extractPlanGraph plan)
       putStr (renderDeprecatedPackages deprecated)
       when (shouldFailOnDeprecated failOn deprecated) $ do
         hPutStrLn stderr (failOnMessage failOn)
@@ -211,6 +222,8 @@ usage =
     , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
     , "  cabal-plan-submit validate-snapshot PATH_TO_SNAPSHOT_JSON"
     , "  cabal-plan-submit inspect-deprecated PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
+    , "  cabal-plan-submit inspect-deprecated --production-only PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     , "  cabal-plan-submit inspect-deprecated --fail-on none|direct|any PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
+    , "  cabal-plan-submit inspect-deprecated --production-only --fail-on none|direct|any PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     , "  cabal-plan-submit why PATH_TO_PLAN_JSON PACKAGE_NAME"
     ]

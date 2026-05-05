@@ -8,6 +8,7 @@ module Hgs.Deprecated
   , FailOnDeprecated(..)
   , readDeprecationIndex
   , findDeprecatedPackages
+  , findDeprecatedPackagesFrom
   , renderDeprecatedPackages
   , shouldFailOnDeprecated
   ) where
@@ -31,9 +32,12 @@ import Hgs.Domain
   , Version(..)
   )
 import Hgs.Why
-  ( PackagePath
+  ( PackagePath(..)
   , renderPackagePath
-  , shortestPathsToPackage
+  , shortestPathsToPackageFrom
+  )
+import Hgs.LocalUnitFilter
+  ( LocalUnitFilter(..)
   )
 
 data Deprecation = Deprecation
@@ -210,7 +214,11 @@ arrayField key o =
     _ -> Nothing
 
 findDeprecatedPackages :: Map PackageName Deprecation -> PlanGraph -> [DeprecatedPackage]
-findDeprecatedPackages index graph =
+findDeprecatedPackages =
+  findDeprecatedPackagesFrom AllLocalUnits
+
+findDeprecatedPackagesFrom :: LocalUnitFilter -> Map PackageName Deprecation -> PlanGraph -> [DeprecatedPackage]
+findDeprecatedPackagesFrom filterKind index graph =
   Map.elems $
     Map.fromList
       [ ( (packageName pkg, packageVersion pkg)
@@ -218,19 +226,34 @@ findDeprecatedPackages index graph =
             { deprecatedPackageName = packageName pkg
             , deprecatedPackageVersion = packageVersion pkg
             , deprecatedRelationship =
-                if packageIsDirect pkg then "direct" else "indirect"
+                relationshipFromPaths pkg paths
             , deprecatedReplacements =
                 deprecationReplacements dep
             , deprecatedReason =
                 deprecationReason dep
             , deprecatedPath =
-                listToMaybe (shortestPathsToPackage (packageName pkg) graph)
+                listToMaybe paths
             }
         )
       | pkg <- Map.elems (planGraphPackages graph)
       , packageSource pkg == PackageExternal
       , dep <- maybeToList (Map.lookup (packageName pkg) index)
+      , let paths = shortestPathsToPackageFrom filterKind (packageName pkg) graph
+      , not (null paths)
       ]
+
+relationshipFromPaths :: Package -> [PackagePath] -> Text
+relationshipFromPaths pkg paths
+  | any isDirectPath paths = "direct"
+  | otherwise = "indirect"
+ where
+  isDirectPath path =
+    case unPackagePath path of
+      [_localRoot, target] ->
+        packageName target == packageName pkg
+          && packageVersion target == packageVersion pkg
+      _ ->
+        False
 
 shouldFailOnDeprecated :: FailOnDeprecated -> [DeprecatedPackage] -> Bool
 shouldFailOnDeprecated policy deps =

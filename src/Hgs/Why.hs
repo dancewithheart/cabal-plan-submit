@@ -6,6 +6,7 @@ module Hgs.Why
   , shortestPathsToPackage
   , renderWhy
   , renderPackagePath
+  , shortestPathsToPackageFrom
   ) where
 
 import Data.List (intercalate, nub)
@@ -23,6 +24,10 @@ import Hgs.Domain
   , UnitId
   , Version(..)
   )
+import Hgs.LocalUnitFilter
+  ( LocalUnitFilter(..)
+  , localUnitAllowed
+  )
 
 newtype PackagePath = PackagePath
   { unPackagePath :: [Package]
@@ -30,8 +35,12 @@ newtype PackagePath = PackagePath
   deriving stock (Eq, Show)
 
 shortestPathsToPackage :: PackageName -> PlanGraph -> [PackagePath]
-shortestPathsToPackage target graph =
-  nub (mapMaybe pathToLocalRoot roots)
+shortestPathsToPackage =
+  shortestPathsToPackageFrom AllLocalUnits
+
+shortestPathsToPackageFrom :: LocalUnitFilter -> PackageName -> PlanGraph -> [PackagePath]
+shortestPathsToPackageFrom filterKind target graph =
+  nubOn packagePathKey (mapMaybe pathToLocalRoot roots)
  where
   packages =
     planGraphPackages graph
@@ -40,10 +49,34 @@ shortestPathsToPackage target graph =
     [ pkg
     | pkg <- Map.elems packages
     , packageSource pkg == PackageLocal
+    , localUnitAllowed filterKind pkg
     ]
 
   pathToLocalRoot root =
     bfs packages target root
+
+packagePathKey :: PackagePath -> [(PackageName, Version)]
+packagePathKey =
+  map packageKey . unPackagePath
+
+packageKey :: Package -> (PackageName, Version)
+packageKey pkg =
+  (packageName pkg, packageVersion pkg)
+
+nubOn :: Ord b => (a -> b) -> [a] -> [a]
+nubOn f =
+  go Set.empty
+ where
+  go _ [] =
+    []
+  go seen (x : xs)
+    | key `Set.member` seen =
+        go seen xs
+    | otherwise =
+        x : go (Set.insert key seen) xs
+   where
+    key =
+      f x
 
 bfs :: Map.Map UnitId Package -> PackageName -> Package -> Maybe PackagePath
 bfs packages target root =
