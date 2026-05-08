@@ -9,8 +9,8 @@ Extract a dependency graph for GitHub dependency submission snapshots.
 1. Find deprecated Hackage dependencies and explain why they are present.
 
 ```sh
-cabal-plan-submit inspect-deprecated dist-newstyle/cache/plan.json deprecated.yaml
-cabal-plan-submit why dist-newstyle/cache/plan.json cryptonite
+cabal run cabal-plan-submit -- why dist-newstyle/cache/plan.json cryptonite
+cabal run cabal-plan-submit -- why $PROJECT_PATH/dist-newstyle/cache/plan.json process
 ```
 2. Submit Cabal dependency graphs to GitHub Dependency Graph.
 ```sh
@@ -103,6 +103,8 @@ jobs:
 
 After successful build data should apperar in `Insights` -> `Dependency graph` in `ecosystem:other`
 e.g. as [in here](https://github.com/dancewithheart/agda2scala/network/dependencies?q=ecosystem%3Aother)
+
+You can export SBOM (Software Bill of Materials) file on `Dependency graph` tab.
 
 Fail CI on deprecated dependencies:
 

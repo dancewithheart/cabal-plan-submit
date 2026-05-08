@@ -4,6 +4,7 @@ import Test.Hspec qualified as Hspec
 import DeprecatedSpec qualified
 import PlanJsonSpec qualified
 import SnapshotSpec qualified
+import LocalsSpec qualified
 
 main :: IO ()
 main =
@@ -11,3 +12,4 @@ main =
     PlanJsonSpec.spec
     SnapshotSpec.spec
     DeprecatedSpec.spec
+    LocalsSpec.spec
