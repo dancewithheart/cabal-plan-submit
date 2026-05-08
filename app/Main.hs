@@ -34,7 +34,7 @@ import Hgs.Validate
   , validateSnapshotFile
   )
 import Hgs.Domain (PackageName(..))
-import Hgs.Why (renderWhy)
+import Hgs.Why (renderWhyFrom)
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter(..)
   )
@@ -78,8 +78,10 @@ main = do
           die ("unknown --fail-on value: " <> failOn <> "\nExpected one of: none, direct, any")
         Just policy ->
           inspectDeprecated ProductionLocalUnits policy planPath deprecatedPath
+    ["why", "--production-only", path, packageName] ->
+      whyPackage ProductionLocalUnits path packageName
     ["why", path, packageName] ->
-      whyPackage path packageName
+      whyPackage AllLocalUnits path packageName
     ["inspect-locals", path] ->
       inspectLocalPackages path
     _ ->
@@ -195,11 +197,12 @@ failOnMessage = \case
   FailOnDirect -> "deprecated direct dependencies found"
   FailOnAny    -> "deprecated dependencies found"
 
-whyPackage :: FilePath -> String -> IO ()
-whyPackage path packageName = do
+whyPackage :: LocalUnitFilter -> FilePath -> String -> IO ()
+whyPackage localFilter path packageName = do
   plan <- readPlanOrDie path
   putStr $
-    renderWhy
+    renderWhyFrom
+      localFilter
       (PackageName (Text.pack packageName))
       (extractPlanGraph plan)
 
@@ -226,4 +229,5 @@ usage =
     , "  cabal-plan-submit inspect-deprecated --fail-on none|direct|any PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     , "  cabal-plan-submit inspect-deprecated --production-only --fail-on none|direct|any PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     , "  cabal-plan-submit why PATH_TO_PLAN_JSON PACKAGE_NAME"
+    , "  cabal-plan-submit why --production-only PATH_TO_PLAN_JSON PACKAGE_NAME"
     ]
