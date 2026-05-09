@@ -3,12 +3,14 @@
 module DeprecatedSpec (spec) where
 
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Hgs.Deprecated
   ( DeprecatedPackage(..)
   , Deprecation(..)
   , FailOnDeprecated(..)
   , findDeprecatedPackages
+  , filterDeprecatedPackagesIgnoring
   , renderDeprecatedPackages
   , shouldFailOnDeprecated
   )
@@ -133,6 +135,33 @@ spec = do
 
       renderDeprecatedPackages (findDeprecatedPackages index graph)
         `shouldContain` "unix-time-0.4.17 -> old-time-1.1.1.0"
+
+  describe "filterDeprecatedPackagesIgnoring" $ do
+    it "keeps findings when ignored package is not on the path" $ do
+      let deps =
+            findDeprecatedPackages deprecatedBytestring simpleGraph
+
+      fmap deprecatedNameVersion
+        (filterDeprecatedPackagesIgnoring (Set.singleton (PackageName "not-on-path")) deps)
+        `shouldBe` [("bytestring", "0.11.5.3")]
+
+    it "drops finding when the deprecated package itself is ignored" $ do
+      let deps =
+            findDeprecatedPackages deprecatedBytestring simpleGraph
+
+      filterDeprecatedPackagesIgnoring
+        (Set.singleton (PackageName "bytestring"))
+        deps
+        `shouldBe` []
+
+    it "drops finding when an intermediate package on the path is ignored" $ do
+      let deps =
+            findDeprecatedPackages deprecatedBytestring simpleGraph
+
+      filterDeprecatedPackagesIgnoring
+        (Set.singleton (PackageName "aeson"))
+        deps
+        `shouldBe` []
 
 deprecatedNameVersion :: DeprecatedPackage -> (String, String)
 deprecatedNameVersion dep =
