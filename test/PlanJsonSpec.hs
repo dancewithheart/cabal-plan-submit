@@ -69,6 +69,77 @@ spec = do
         Right plan ->
           length (rawPlanItems plan) `shouldBe` 1
 
+    it "parses component dependencies when top-level depends is null" $ do
+      let input =
+            "{\
+            \  \"install-plan\": [\
+            \    {\
+            \      \"type\": \"configured\",\
+            \      \"id\": \"unix-time-0.4.17-inplace\",\
+            \      \"pkg-name\": \"unix-time\",\
+            \      \"pkg-version\": \"0.4.17\",\
+            \      \"pkg-src\": { \"type\": \"local\", \"path\": \".\" },\
+            \      \"depends\": null,\
+            \      \"components\": {\
+            \        \"lib\": {\
+            \          \"depends\": [\
+            \            \"base-4.18.3.0\",\
+            \            \"old-time-1.1.1.0-oldtimehash\"\
+            \          ]\
+            \        },\
+            \        \"test:spec\": {\
+            \          \"depends\": [\
+            \            \"hspec-2.11.17-hspechash\",\
+            \            \"old-time-1.1.1.0-oldtimehash\"\
+            \          ]\
+            \        }\
+            \      }\
+            \    },\
+            \    {\
+            \      \"type\": \"configured\",\
+            \      \"id\": \"old-time-1.1.1.0-oldtimehash\",\
+            \      \"pkg-name\": \"old-time\",\
+            \      \"pkg-version\": \"1.1.1.0\",\
+            \      \"pkg-src\": { \"type\": \"repo-tar\" },\
+            \      \"depends\": null\
+            \    },\
+            \    {\
+            \      \"type\": \"pre-existing\",\
+            \      \"id\": \"base-4.18.3.0\",\
+            \      \"pkg-name\": \"base\",\
+            \      \"pkg-version\": \"4.18.3.0\",\
+            \      \"depends\": []\
+            \    },\
+            \    {\
+            \      \"type\": \"configured\",\
+            \      \"id\": \"hspec-2.11.17-hspechash\",\
+            \      \"pkg-name\": \"hspec\",\
+            \      \"pkg-version\": \"2.11.17\",\
+            \      \"pkg-src\": { \"type\": \"repo-tar\" },\
+            \      \"depends\": []\
+            \    }\
+            \  ]\
+            \}"
+
+      case decodeRawPlan input of
+        Left err ->
+          expectationFailure err
+        Right plan -> do
+          let graph = extractPlanGraph plan
+              packages = planGraphPackages graph
+
+          fmap packageDepends (Map.lookup (UnitId "unix-time-0.4.17-inplace") packages)
+            `shouldBe` Just
+              ( Set.fromList
+                  [ UnitId "base-4.18.3.0"
+                  , UnitId "old-time-1.1.1.0-oldtimehash"
+                  , UnitId "hspec-2.11.17-hspechash"
+                  ]
+              )
+
+          fmap packageIsDirect (Map.lookup (UnitId "old-time-1.1.1.0-oldtimehash") packages)
+            `shouldBe` Just True
+
   describe "extractPlanGraph" $ do
     it "marks direct external dependencies from local packages" $ do
       let localPkg =

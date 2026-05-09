@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hgs.Domain
@@ -16,10 +17,13 @@ module Hgs.Domain
 
 import Data.Aeson
   ( FromJSON(parseJSON)
+  , Value(..)
   , withObject
   , (.:?)
   , (.!=)
   )
+import Data.Aeson.Types (Parser)
+import Data.Aeson.KeyMap qualified as KeyMap
 
 import Data.Map.Strict (Map)
 import Data.Set (Set)
@@ -92,12 +96,26 @@ instance FromJSON RawPkgSrc where
       <*> o .:? "path"
 
 instance FromJSON RawPlanItem where
-  parseJSON = withObject "RawPlanItem" $ \o ->
+  parseJSON = withObject "RawPlanItem" $ \o -> do
+    topDepends       <- fmap UnitId <$> (o .:? "depends" .!= [])
+    componentDepends <- parseComponentDepends =<< o .:? "components"
     RawPlanItem
       <$> o .:? "type"
       <*> (fmap UnitId <$> o .:? "id")
       <*> (fmap PackageName <$> o .:? "pkg-name")
       <*> (fmap Version <$> o .:? "pkg-version")
-      <*> (fmap UnitId <$> (o .:? "depends" .!= []))
+      <*> pure (topDepends <> componentDepends)
       <*> o .:? "pkg-src"
 
+parseComponentDepends :: Maybe Value -> Parser [UnitId]
+parseComponentDepends = \case
+    Nothing -> pure []
+    Just Null -> pure []
+    Just (Object components) ->
+      concat <$> traverse parseComponent (KeyMap.elems components)
+    Just _ -> pure []
+
+parseComponent :: Value -> Parser [UnitId]
+parseComponent = \case
+  Object component -> fmap UnitId <$> (component .:? "depends" .!= [])
+  _ -> pure []
