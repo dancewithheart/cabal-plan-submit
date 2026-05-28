@@ -40,13 +40,42 @@ validateSnapshotValue =
 isValid :: ValidationErrors -> Bool
 isValid = null . getValidationErrors
 
+-- TODO this needs to be rewriten
+-- currently we just explain what checks does,
+-- but those checks can fail undepenely and one need to know
+-- which one failed
+-- leaving comment for now as there are higher ROI changes
 renderValidationReport :: ValidationErrors -> String
 renderValidationReport errs
-  | isValid errs = "snapshot validation OK"
+  | isValid errs =
+      unlines
+        [ "snapshot validation OK"
+        , ""
+        , "checked:"
+        , "  - valid JSON object"
+        , "  - required top-level keys: version, sha, ref, job, detector, manifests, scanned"
+        , "  - one or more manifests"
+        , "  - manifest name and resolved object"
+        , "  - resolved dependency closure"
+        , "  - no dependency equals parent package_url"
+        , "  - no duplicate dependency entries per package"
+        ]
   | otherwise =
       unlines $
-        "snapshot validation FAILED:"
-          : map (("  - " <>) . Text.unpack) (getValidationErrors errs)
+        [ "snapshot validation FAILED"
+        , ""
+        , "checked:"
+        , "  - valid JSON object"
+        , "  - required top-level keys: version, sha, ref, job, detector, manifests, scanned"
+        , "  - one or more manifests"
+        , "  - manifest name and resolved object"
+        , "  - resolved dependency closure"
+        , "  - no dependency equals parent package_url"
+        , "  - no duplicate dependency entries per package"
+        , ""
+        , "errors:"
+        ]
+          <> map (("  - " <>) . Text.unpack) (getValidationErrors errs)
 
 topLevelChecks :: KeyMap.KeyMap Value -> ValidationErrors
 topLevelChecks o =
