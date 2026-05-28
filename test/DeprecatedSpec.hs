@@ -14,8 +14,13 @@ import Hgs.Deprecated
   )
 import Hgs.Domain
   ( PackageName(..)
+  , RawPkgSrc(..)
+  , RawPlan(..)
+  , RawPlanItem(..)
+  , UnitId(..)
   , Version(..)
   )
+import Hgs.Extract (extractPlanGraph)
 import Test.Hspec
 import TestSupport (simpleGraph)
 
@@ -88,6 +93,46 @@ spec = do
     it "does not fail on indirect deprecated dependency with FailOnDirect" $ do
       let deps = findDeprecatedPackages deprecatedBytestring simpleGraph
       shouldFailOnDeprecated FailOnDirect deps `shouldBe` False
+
+    it "reports deprecated dependency reachable through component dependencies" $ do
+      let graph =
+            extractPlanGraph
+              RawPlan
+                { rawPlanCabalVersion = Nothing
+                , rawPlanCompilerId = Nothing
+                , rawPlanItems =
+                    [ RawPlanItem
+                        { rawPlanItemType = Just "configured"
+                        , rawPlanItemId = Just (UnitId "unix-time-0.4.17-inplace")
+                        , rawPlanItemPkgName = Just (PackageName "unix-time")
+                        , rawPlanItemPkgVersion = Just (Version "0.4.17")
+                        , rawPlanItemDepends = [UnitId "old-time-1.1.1.0-oldtimehash"]
+                        , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
+                        }
+                    , RawPlanItem
+                        { rawPlanItemType = Just "configured"
+                        , rawPlanItemId = Just (UnitId "old-time-1.1.1.0-oldtimehash")
+                        , rawPlanItemPkgName = Just (PackageName "old-time")
+                        , rawPlanItemPkgVersion = Just (Version "1.1.1.0")
+                        , rawPlanItemDepends = []
+                        , rawPlanItemPkgSrc = Nothing
+                        }
+                    ]
+                }
+
+          index =
+            Map.fromList
+              [ ( PackageName "old-time"
+                , Deprecation
+                    { deprecationPackage = PackageName "old-time"
+                    , deprecationReplacements = [PackageName "time"]
+                    , deprecationReason = Nothing
+                    }
+                )
+              ]
+
+      renderDeprecatedPackages (findDeprecatedPackages index graph)
+        `shouldContain` "unix-time-0.4.17 -> old-time-1.1.1.0"
 
 deprecatedNameVersion :: DeprecatedPackage -> (String, String)
 deprecatedNameVersion dep =
