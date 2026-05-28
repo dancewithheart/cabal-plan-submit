@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: "en-US"
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  review_details: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+
+  path_filters:
+    - "!dist-newstyle/**"
+    - "!dist/**"
+    - "!result/**"
+    - "!*.golden"
+    - "!snapshot.json"
+    - "!*.sarif"
+
+  path_instructions:
+    - path: "src/**/*.hs"
+      instructions: |
+        Review as Haskell library code.
+        Focus on:
+        - totality and explicit failure modes
+        - preserving graph invariants
+        - avoiding silent data loss when parsing Cabal plan.json
+        - small focused functions
+        - property-testable behavior
+        - avoiding unnecessary monad transformers
+        - propose using abstractions from mathematics
+
+    - path: "app/**/*.hs"
+      instructions: |
+        Review as CLI boundary code.
+        Focus on:
+        - actionable error messages
+        - stable command-line behavior
+        - compatibility with GitHub Actions
+        - not hiding parse or validation failures
+
+    - path: "test/**/*.hs"
+      instructions: |
+        Review tests for meaningful regressions.
+        Prefer:
+        - property tests for invariants
+        - golden tests for CLI output
+        - small fixtures that reproduce real plan.json edge cases
+
+chat:
+  auto_reply: true
