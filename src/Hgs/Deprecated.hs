@@ -7,6 +7,7 @@ module Hgs.Deprecated
   , DeprecatedPackage(..)
   , FailOnDeprecated(..)
   , readDeprecationIndex
+  , filterDeprecatedPackagesIgnoring
   , findDeprecatedPackages
   , findDeprecatedPackagesFrom
   , renderDeprecatedPackages
@@ -20,6 +21,8 @@ import Data.List (nub)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, listToMaybe, mapMaybe)
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Vector qualified as Vector
@@ -212,6 +215,19 @@ arrayField key o =
   case KeyMap.lookup (Key.fromText key) o of
     Just (Array xs) -> Just (Vector.toList xs)
     _ -> Nothing
+
+filterDeprecatedPackagesIgnoring :: Set PackageName -> [DeprecatedPackage] -> [DeprecatedPackage]
+filterDeprecatedPackagesIgnoring ignored =
+  filter (not . ignoredDeprecatedPackage)
+ where
+  ignoredDeprecatedPackage dep =
+    deprecatedPackageName dep `Set.member` ignored
+      || maybe False pathContainsIgnoredPackage (deprecatedPath dep)
+
+  pathContainsIgnoredPackage path =
+    any
+      (\pkg -> packageName pkg `Set.member` ignored)
+      (unPackagePath path)
 
 findDeprecatedPackages :: Map PackageName Deprecation -> PlanGraph -> [DeprecatedPackage]
 findDeprecatedPackages =
