@@ -11,6 +11,8 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap (KeyMap)
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Set qualified as Set
+import System.FilePath ((</>), takeExtension)
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Ord (Down(..))
@@ -95,12 +97,15 @@ explainResult localFilter graph result = do
 findMentionedPackage :: PlanGraph -> Value -> Maybe Package
 findMentionedPackage graph result =
   firstJust
-    [ exactVersionMatch
-    , uniqueNameMatch
+    [ packageFromConcernedNames
+    , exactVersionMatch
     ]
  where
   haystack =
     Text.unwords (collectStrings result)
+
+  concernedNames =
+    extractConcernedPackageNames haystack
 
   candidatePackages =
     sortOn
@@ -110,23 +115,71 @@ findMentionedPackage graph result =
       , packageSource pkg == PackageExternal
       ]
 
+  packageFromConcernedNames =
+    firstJust
+      [ Just pkg
+      | name <- concernedNames
+      , pkg <- candidatePackages
+      , unPackageName (packageName pkg) == name
+      ]
+
   exactVersionMatch =
     firstJust
       [ Just pkg
       | pkg <- candidatePackages
-      , packageNameMentioned pkg haystack
-      , packageVersionMentioned pkg haystack
+      , exactPackageNameMentioned pkg haystack
+      , unVersion (packageVersion pkg) `Text.isInfixOf` haystack
       ]
 
-  uniqueNameMatch =
-    case
-      [ pkg
-      | pkg <- candidatePackages
-      , packageNameMentioned pkg haystack
-      ]
-    of
-      [pkg] -> Just pkg
-      _     -> Nothing
+extractConcernedPackageNames :: Text -> [Text]
+extractConcernedPackageNames haystack =
+  dedupeText $
+    concatMap namesFromParenthesizedLine (Text.lines haystack)
+
+namesFromParenthesizedLine :: Text -> [Text]
+namesFromParenthesizedLine line =
+  case Text.stripPrefix "(" (Text.strip line) of
+    Nothing ->
+      []
+
+    Just rest ->
+      case Text.breakOn ")" rest of
+        (inside, after)
+          | ")" `Text.isPrefixOf` after ->
+              filter plausiblePackageName $
+                map Text.strip $
+                  Text.splitOn "," inside
+          | otherwise ->
+              []
+
+exactPackageNameMentioned :: Package -> Text -> Bool
+exactPackageNameMentioned pkg haystack =
+  unPackageName (packageName pkg) `elem` extractConcernedPackageNames haystack
+
+plausiblePackageName :: Text -> Bool
+plausiblePackageName name =
+  not (Text.null name)
+    && Text.all validChar name
+ where
+  validChar c =
+    ('a' <= c && c <= 'z')
+      || ('A' <= c && c <= 'Z')
+      || ('0' <= c && c <= '9')
+      || c == '-'
+      || c == '_'
+
+dedupeText :: [Text] -> [Text]
+dedupeText =
+  go Set.empty
+ where
+  go _ [] =
+    []
+
+  go seen (x : xs)
+    | x `Set.member` seen =
+        go seen xs
+    | otherwise =
+        x : go (Set.insert x seen) xs
 
 packageNameMentioned :: Package -> Text -> Bool
 packageNameMentioned pkg haystack =
@@ -160,8 +213,112 @@ relationshipFromPaths paths
 
 addExplanation :: FindingExplanation -> KeyMap Value -> KeyMap Value
 addExplanation explanation =
-  addProperties explanation
+  addLevel explanation
+    . addLocations explanation
+    . addProperties explanation
     . addMessageExplanation explanation
+
+addLevel :: FindingExplanation -> KeyMap Value -> KeyMap Value
+addLevel explanation o =
+  case explainedRelationship explanation of
+    "direct" ->
+      KeyMap.insert "level" (String "error") o
+
+    "indirect" ->
+      KeyMap.insert "level" (String "warning") o
+
+    _ ->
+      o
+
+addLocations :: FindingExplanation -> KeyMap Value -> KeyMap Value
+addLocations explanation o =
+  case explanationLocations explanation of
+    [] ->
+      o
+
+    locations ->
+      KeyMap.insert "locations" (Array (Vector.fromList locations)) o
+
+explanationLocations :: FindingExplanation -> [Value]
+explanationLocations explanation =
+  [ locationValue root path
+  | root <- uniqueLocalRoots (explainedPaths explanation)
+  , path <- maybeToList (packageSourcePath root)
+  ]
+
+uniqueLocalRoots :: [PackagePath] -> [Package]
+uniqueLocalRoots paths =
+  nubOn packageKey
+    [ root
+    | PackagePath (root : _) <- paths
+    , packageSource root == PackageLocal
+    ]
+
+packageKey :: Package -> (PackageName, Version)
+packageKey pkg =
+  (packageName pkg, packageVersion pkg)
+
+locationValue :: Package -> FilePath -> Value
+locationValue root path =
+  Object $
+    KeyMap.fromList
+      [ ( "physicalLocation"
+        , Object $
+            KeyMap.fromList
+              [ ( "artifactLocation"
+                , Object $
+                    KeyMap.fromList
+                      [ ("uri", String (Text.pack (normaliseFileUri (localPackageCabalFile root path))))
+                      ]
+                )
+              , ( "region"
+                , Object $
+                    KeyMap.fromList
+                      [ ("startLine", Aeson.toJSON (1 :: Int))
+                      , ("startColumn", Aeson.toJSON (1 :: Int))
+                      ]
+                )
+              ]
+        )
+      ]
+
+localPackageCabalFile :: Package -> FilePath -> FilePath
+localPackageCabalFile pkg path
+  | takeExtension path == ".cabal" =
+      path
+
+  | otherwise =
+      path </> Text.unpack (unPackageName (packageName pkg)) <> ".cabal"
+
+normaliseFileUri :: FilePath -> String
+normaliseFileUri path
+  | "file://" `prefixOf` path = path
+  | "/" `prefixOf` path = "file://" <> path
+  | otherwise = path
+
+prefixOf :: String -> String -> Bool
+prefixOf prefix text =
+  take (length prefix) text == prefix
+
+nubOn :: Ord b => (a -> b) -> [a] -> [a]
+nubOn f =
+  go Set.empty
+ where
+  go _ [] =
+    []
+
+  go seen (x : xs)
+    | key `Set.member` seen =
+        go seen xs
+    | otherwise =
+        x : go (Set.insert key seen) xs
+   where
+    key =
+      f x
+
+maybeToList :: Maybe a -> [a]
+maybeToList =
+  maybe [] pure
 
 addMessageExplanation :: FindingExplanation -> KeyMap Value -> KeyMap Value
 addMessageExplanation explanation o =
@@ -177,11 +334,14 @@ addMessageExplanation explanation o =
       Just (String t) -> t
       _ -> ""
 
+  oldMarkdown =
+    case KeyMap.lookup "markdown" oldMessage of
+      Just (String t) -> t
+      _ -> ""
+
   message' =
-    KeyMap.insert
-      "text"
-      (String (appendExplanationText oldText explanation))
-      oldMessage
+    KeyMap.insert "markdown" (String (appendExplanationMarkdown oldMarkdown explanation)) $
+      KeyMap.insert "text" (String (appendExplanationText oldText explanation)) oldMessage
 
 appendExplanationText :: Text -> FindingExplanation -> Text
 appendExplanationText oldText explanation =
@@ -196,6 +356,24 @@ appendExplanationText oldText explanation =
     <> "  paths:\n"
     <> Text.concat
       [ "    - " <> Text.pack (renderPackagePath path) <> "\n"
+      | path <- explainedPaths explanation
+      ]
+
+appendExplanationMarkdown :: Text -> FindingExplanation -> Text
+appendExplanationMarkdown oldMarkdown explanation =
+  Text.stripEnd oldMarkdown
+    <> "\n\n## cabal-plan-submit dependency path\n\n"
+    <> "* package: `"
+    <> renderPackageText (explainedPackage explanation)
+    <> "`\n"
+    <> "* relationship: `"
+    <> explainedRelationship explanation
+    <> "`\n"
+    <> "* paths:\n"
+    <> Text.concat
+      [ "  * `"
+          <> Text.pack (renderPackagePath path)
+          <> "`\n"
       | path <- explainedPaths explanation
       ]
 
@@ -219,8 +397,34 @@ addProperties explanation o =
               | path <- explainedPaths explanation
               ]
           )
+        , ("tags", Aeson.toJSON (resultTags explanation))
+        , ("precision", String "medium")
+        , ("problem.severity", String (problemSeverity explanation))
         ])
       oldProperties
+
+resultTags :: FindingExplanation -> [Text]
+resultTags explanation =
+  [ "haskell"
+  , "cabal"
+  , "dependency"
+  , "cabal-plan-submit"
+  , case explainedRelationship explanation of
+      "direct" -> "direct-dependency"
+      _        -> "transitive-dependency"
+  ]
+
+problemSeverity :: FindingExplanation -> Text
+problemSeverity explanation =
+  case explainedRelationship explanation of
+    "direct" ->
+      "error"
+
+    "indirect" ->
+      "warning"
+
+    _ ->
+      "recommendation"
 
 renderPackageText :: Package -> Text
 renderPackageText pkg =
@@ -245,7 +449,7 @@ collectStrings =
     String t -> [t]
     Number _ -> []
     Bool _ -> []
-    Null ->  []
+    Null -> []
 
 firstJust :: [Maybe a] -> Maybe a
 firstJust =

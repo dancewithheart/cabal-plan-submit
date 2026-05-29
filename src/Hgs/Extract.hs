@@ -17,7 +17,7 @@ import Hgs.Domain
   , PackageName(..)
   , PackageSource(..)
   , PlanGraph(..)
-  , RawPkgSrc(rawPkgSrcKind)
+  , RawPkgSrc(rawPkgSrcKind, rawPkgSrcPath)
   , RawPlan(..)
   , RawPlanItem(..)
   , UnitId(..)
@@ -64,6 +64,7 @@ extractPlanGraph rawPlan =
             , packageName = completeName item
             , packageVersion = completeVersion item
             , packageSource = completeSource item
+            , packageSourcePath = completeSourcePath item
             , packageDepends = Set.filter (`Set.member` knownUnitIds) (completeDepends item)
             , packageIsDirect = completeUnitId item `Set.member` directExternalUnitIds
             }
@@ -72,11 +73,12 @@ extractPlanGraph rawPlan =
       ]
 
 data CompleteItem = CompleteItem
-  { completeUnitId  :: UnitId
-  , completeName    :: PackageName
-  , completeVersion :: Version
-  , completeSource  :: PackageSource
-  , completeDepends :: Set UnitId
+  { completeUnitId     :: UnitId
+  , completeName       :: PackageName
+  , completeVersion    :: Version
+  , completeSource     :: PackageSource
+  , completeSourcePath :: Maybe FilePath
+  , completeDepends    :: Set UnitId
   }
 
 toCompleteItem :: RawPlanItem -> Maybe CompleteItem
@@ -90,6 +92,7 @@ toCompleteItem item = do
       , completeName = name
       , completeVersion = version
       , completeSource = classifySource item
+      , completeSourcePath = rawPkgSrcPath =<< rawPlanItemPkgSrc item
       , completeDepends = Set.fromList (rawPlanItemDepends item)
       }
 

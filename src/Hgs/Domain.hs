@@ -67,12 +67,13 @@ data PackageSource
   deriving stock (Eq, Ord, Show)
 
 data Package = Package
-  { packageUnitId   :: UnitId
-  , packageName     :: PackageName
-  , packageVersion  :: Version
-  , packageSource   :: PackageSource
-  , packageDepends  :: Set UnitId
-  , packageIsDirect :: Bool
+  { packageUnitId    :: UnitId
+  , packageName      :: PackageName
+  , packageVersion   :: Version
+  , packageSource    :: PackageSource
+  , packageSourcePath :: Maybe FilePath
+  , packageDepends   :: Set UnitId
+  , packageIsDirect  :: Bool
   }
   deriving stock (Eq, Show)
 
