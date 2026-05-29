@@ -47,6 +47,11 @@ import System.Directory (doesFileExist, listDirectory)
 import System.Environment (getArgs)
 import System.Exit (die, exitFailure)
 import System.IO (hPutStrLn, stderr)
+import Data.Aeson qualified as Aeson
+import Data.ByteString qualified as BS
+import Hgs.Sarif.Enrich
+  ( enrichSarifValue
+  )
 
 main :: IO ()
 main = do
@@ -76,6 +81,10 @@ main = do
       whyPackage AllLocalUnits path packageName
     ["inspect-locals", path] ->
       inspectLocalPackages path
+    ["enrich-sarif", planPath, sarifPath] ->
+      enrichSarif AllLocalUnits planPath sarifPath
+    ["enrich-sarif", "--production-only", planPath, sarifPath] ->
+      enrichSarif ProductionLocalUnits planPath sarifPath
     _ ->
       die usage
 
@@ -268,6 +277,22 @@ inspectLocalPackages path = do
     renderLocals
       (inspectLocals (extractPlanGraph plan))
 
+enrichSarif :: LocalUnitFilter -> FilePath -> FilePath -> IO ()
+enrichSarif localFilter planPath sarifPath = do
+  plan <- readPlanOrDie planPath
+  sarifBytes <- BS.readFile sarifPath
+  case Aeson.eitherDecodeStrict' sarifBytes of
+    Left err ->
+      die ("failed to parse SARIF JSON: " <> err)
+
+    Right sarif ->
+      LBS8.putStrLn $
+        Aeson.encode $
+          enrichSarifValue
+            localFilter
+            (extractPlanGraph plan)
+            sarif
+
 usage :: String
 usage =
   unlines
@@ -282,4 +307,6 @@ usage =
     , "  cabal-plan-submit inspect-deprecated [--production-only] [--fail-on none|direct|any] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     , "  cabal-plan-submit why PATH_TO_PLAN_JSON PACKAGE_NAME"
     , "  cabal-plan-submit why --production-only PATH_TO_PLAN_JSON PACKAGE_NAME"
+    , "  cabal-plan-submit enrich-sarif PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
+    , "  cabal-plan-submit enrich-sarif --production-only PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
     ]

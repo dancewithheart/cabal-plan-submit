@@ -5,7 +5,6 @@ module Hgs.Extract
   , summarisePlanGraph
   ) where
 
-import Data.Foldable (foldl')
 import Data.List (intercalate)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
