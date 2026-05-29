@@ -12,9 +12,16 @@ import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap (KeyMap)
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Set qualified as Set
-import System.FilePath ((</>), takeExtension)
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
+import System.FilePath
+  ( (</>)
+  , dropTrailingPathSeparator
+  , makeRelative
+  , normalise
+  , takeExtension
+  )
 import Data.Ord (Down(..))
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -55,21 +62,25 @@ enrichRun :: LocalUnitFilter -> PlanGraph -> Value -> Value
 enrichRun localFilter graph =
   \case
     Object o ->
-      Object (adjustArrayField "results" (enrichResult localFilter graph) o)
+      let repoRoot =
+            fromMaybe
+              (guessRepoRoot graph)
+              (sarifRunRoot o)
+       in Object (adjustArrayField "results" (enrichResult repoRoot localFilter graph) o)
 
     other ->
       other
 
-enrichResult :: LocalUnitFilter -> PlanGraph -> Value -> Value
-enrichResult localFilter graph result =
+enrichResult :: FilePath -> LocalUnitFilter -> PlanGraph -> Value -> Value
+enrichResult repoRoot localFilter graph result =
   case result of
     Object o ->
       case explainResult localFilter graph result of
         Nothing ->
-          result
+          Object (repairRootLocations repoRoot graph o)
 
         Just explanation ->
-          Object (addExplanation explanation o)
+          Object (addExplanation repoRoot explanation o)
 
     _ ->
       result
@@ -181,14 +192,6 @@ dedupeText =
     | otherwise =
         x : go (Set.insert x seen) xs
 
-packageNameMentioned :: Package -> Text -> Bool
-packageNameMentioned pkg haystack =
-  unPackageName (packageName pkg) `Text.isInfixOf` haystack
-
-packageVersionMentioned :: Package -> Text -> Bool
-packageVersionMentioned pkg haystack =
-  unVersion (packageVersion pkg) `Text.isInfixOf` haystack
-
 pathEndsAt :: Package -> PackagePath -> Bool
 pathEndsAt pkg path =
   case reverse (unPackagePath path) of
@@ -211,10 +214,10 @@ relationshipFromPaths paths
       _ ->
         False
 
-addExplanation :: FindingExplanation -> KeyMap Value -> KeyMap Value
-addExplanation explanation =
+addExplanation :: FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
+addExplanation repoRoot explanation =
   addLevel explanation
-    . addLocations explanation
+    . addLocations repoRoot explanation
     . addProperties explanation
     . addMessageExplanation explanation
 
@@ -230,18 +233,18 @@ addLevel explanation o =
     _ ->
       o
 
-addLocations :: FindingExplanation -> KeyMap Value -> KeyMap Value
-addLocations explanation o =
-  case explanationLocations explanation of
+addLocations :: FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
+addLocations repoRoot explanation o =
+  case explanationLocations repoRoot explanation of
     [] ->
       o
 
     locations ->
       KeyMap.insert "locations" (Array (Vector.fromList locations)) o
 
-explanationLocations :: FindingExplanation -> [Value]
-explanationLocations explanation =
-  [ locationValue root path
+explanationLocations :: FilePath -> FindingExplanation -> [Value]
+explanationLocations repoRoot explanation =
+  [ locationValue repoRoot root path
   | root <- uniqueLocalRoots (explainedPaths explanation)
   , path <- maybeToList (packageSourcePath root)
   ]
@@ -258,8 +261,8 @@ packageKey :: Package -> (PackageName, Version)
 packageKey pkg =
   (packageName pkg, packageVersion pkg)
 
-locationValue :: Package -> FilePath -> Value
-locationValue root path =
+locationValue :: FilePath -> Package -> FilePath -> Value
+locationValue repoRoot root path =
   Object $
     KeyMap.fromList
       [ ( "physicalLocation"
@@ -268,7 +271,7 @@ locationValue root path =
               [ ( "artifactLocation"
                 , Object $
                     KeyMap.fromList
-                      [ ("uri", String (Text.pack (normaliseFileUri (localPackageCabalFile root path))))
+                      [ ("uri", String (Text.pack (repoRelativePath repoRoot (localPackageCabalFile root path))))
                       ]
                 )
               , ( "region"
@@ -285,20 +288,17 @@ locationValue root path =
 localPackageCabalFile :: Package -> FilePath -> FilePath
 localPackageCabalFile pkg path
   | takeExtension path == ".cabal" =
-      path
+      normalise path
 
   | otherwise =
-      path </> Text.unpack (unPackageName (packageName pkg)) <> ".cabal"
+      normalise path </> Text.unpack (unPackageName (packageName pkg)) <> ".cabal"
 
-normaliseFileUri :: FilePath -> String
-normaliseFileUri path
-  | "file://" `prefixOf` path = path
-  | "/" `prefixOf` path = "file://" <> path
-  | otherwise = path
-
-prefixOf :: String -> String -> Bool
-prefixOf prefix text =
-  take (length prefix) text == prefix
+repoRelativePath :: FilePath -> FilePath -> FilePath
+repoRelativePath repoRoot path =
+  normalise $
+    makeRelative
+      (normalise repoRoot)
+      (normalise path)
 
 nubOn :: Ord b => (a -> b) -> [a] -> [a]
 nubOn f =
@@ -457,3 +457,196 @@ firstJust =
     [] -> Nothing
     Nothing : xs -> firstJust xs
     Just x : _ -> Just x
+
+repairRootLocations :: FilePath -> PlanGraph -> KeyMap Value -> KeyMap Value
+repairRootLocations repoRoot graph o =
+  case KeyMap.lookup "locations" o of
+    Just (Array locations) ->
+      KeyMap.insert
+        "locations"
+        (Array (Vector.map (repairLocation repoRoot graph) locations))
+        o
+
+    _ ->
+      o
+
+repairLocation :: FilePath -> PlanGraph -> Value -> Value
+repairLocation repoRoot graph =
+  \case
+    Object location ->
+      Object (repairPhysicalLocation repoRoot graph location)
+
+    other ->
+      other
+
+repairPhysicalLocation :: FilePath -> PlanGraph -> KeyMap Value -> KeyMap Value
+repairPhysicalLocation repoRoot graph location =
+  case KeyMap.lookup "physicalLocation" location of
+    Just (Object physicalLocation) ->
+      KeyMap.insert
+        "physicalLocation"
+        (Object (repairPhysicalLocationObject repoRoot graph physicalLocation))
+        location
+
+    _ ->
+      location
+
+repairPhysicalLocationObject :: FilePath -> PlanGraph -> KeyMap Value -> KeyMap Value
+repairPhysicalLocationObject repoRoot graph physicalLocation =
+  case KeyMap.lookup "artifactLocation" physicalLocation of
+    Just (Object artifactLocation)
+      | isProjectRootArtifact repoRoot artifactLocation ->
+          KeyMap.insert
+            "artifactLocation"
+            (Object (KeyMap.insert "uri" (String (Text.pack (fallbackManifestPath graph))) artifactLocation))
+            (KeyMap.insert "region" defaultRegion physicalLocation)
+
+    _ ->
+      physicalLocation
+
+isProjectRootArtifact :: FilePath -> KeyMap Value -> Bool
+isProjectRootArtifact repoRoot artifactLocation =
+  case KeyMap.lookup "uri" artifactLocation of
+    Just (String uri) ->
+      normalise (uriToPath uri) == normalise repoRoot
+
+    _ ->
+      False
+
+fallbackManifestPath :: PlanGraph -> FilePath
+fallbackManifestPath graph =
+  case rootLocalPackages graph of
+    root : _ ->
+      Text.unpack (unPackageName (packageName root)) <> ".cabal"
+
+    [] ->
+      "cabal.project"
+
+defaultRegion :: Value
+defaultRegion =
+  Object $
+    KeyMap.fromList
+      [ ("startLine", Aeson.toJSON (1 :: Int))
+      , ("startColumn", Aeson.toJSON (1 :: Int))
+      ]
+
+sarifRunRoot :: KeyMap Value -> Maybe FilePath
+sarifRunRoot run =
+  case KeyMap.lookup "artifacts" run of
+    Just (Array artifacts) ->
+      firstJust
+        [ uriToPath <$> artifactUri artifact
+        | artifact <- Vector.toList artifacts
+        ]
+
+    _ ->
+      Nothing
+
+artifactUri :: Value -> Maybe Text
+artifactUri =
+  \case
+    Object artifact ->
+      case KeyMap.lookup "location" artifact of
+        Just (Object location) ->
+          case KeyMap.lookup "uri" location of
+            Just (String uri) -> Just uri
+            _ -> Nothing
+
+        _ ->
+          Nothing
+
+    _ ->
+      Nothing
+
+guessRepoRoot :: PlanGraph -> FilePath
+guessRepoRoot graph =
+  case rootLocalPackages graph of
+    [] ->
+      "."
+
+    [pkg] ->
+      case packageSourcePath pkg of
+        Just path ->
+          dropTrailingPathSeparator (normalise path)
+
+        Nothing ->
+          "."
+
+    pkgs ->
+      commonParent
+        [ path
+        | pkg <- pkgs
+        , path <- maybeToList (packageSourcePath pkg)
+        ]
+
+rootLocalPackages :: PlanGraph -> [Package]
+rootLocalPackages graph =
+  [ pkg
+  | pkg <- Map.elems (planGraphPackages graph)
+  , packageSource pkg == PackageLocal
+  ]
+
+commonParent :: [FilePath] -> FilePath
+commonParent paths =
+  case map (normalise . dropTrailingPathSeparator) paths of
+    [] ->
+      "."
+
+    [path] ->
+      path
+
+    path : rest ->
+      foldl commonPrefixPath path rest
+
+commonPrefixPath :: FilePath -> FilePath -> FilePath
+commonPrefixPath a b =
+  joinPathParts $
+    map fst $
+      takeWhile (uncurry (==)) $
+        zip (splitPathParts a) (splitPathParts b)
+
+splitPathParts :: FilePath -> [FilePath]
+splitPathParts =
+  filter (not . null) . splitOnSlash . normalise
+
+joinPathParts :: [FilePath] -> FilePath
+joinPathParts parts =
+  case parts of
+    [] ->
+      "."
+
+    _ ->
+      "/" <> foldr1 (\x y -> x <> "/" <> y) parts
+
+splitOnSlash :: FilePath -> [FilePath]
+splitOnSlash =
+  go []
+ where
+  go acc [] =
+    [reverse acc]
+
+  go acc ('/' : xs) =
+    reverse acc : go [] xs
+
+  go acc (x : xs) =
+    go (x : acc) xs
+
+uriToPath :: Text -> FilePath
+uriToPath uri =
+  Text.unpack $
+    stripFileUriPrefix uri
+
+stripFileUriPrefix :: Text -> Text
+stripFileUriPrefix uri
+  | "file:////" `Text.isPrefixOf` uri =
+      "/" <> Text.drop 9 uri
+
+  | "file:///" `Text.isPrefixOf` uri =
+      "/" <> Text.drop 8 uri
+
+  | "file://" `Text.isPrefixOf` uri =
+      Text.drop 7 uri
+
+  | otherwise =
+      uri
+
