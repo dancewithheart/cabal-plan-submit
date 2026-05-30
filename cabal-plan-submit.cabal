@@ -12,6 +12,7 @@ executable cabal-plan-submit
   other-modules:
     Hgs.Deprecated
     Hgs.Domain
+    Hgs.Sarif.Deprecated
     Hgs.Sarif.Enrich
     Hgs.Extract
     Hgs.Locals

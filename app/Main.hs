@@ -19,6 +19,21 @@ import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Time.Clock (getCurrentTime)
 import Data.Version (showVersion)
+import Paths_cabal_plan_submit qualified as Paths
+import System.Directory (doesFileExist, listDirectory)
+import System.Environment (getArgs)
+import System.FilePath
+  ( (</>)
+  , dropTrailingPathSeparator
+  , joinPath
+  , makeRelative
+  , normalise
+  , takeExtension
+  , splitDirectories
+  )
+import System.Exit (die, exitFailure)
+import System.IO (hPutStrLn, stderr)
+
 import Hgs.Deprecated
   ( FailOnDeprecated(..)
   , filterDeprecatedPackagesIgnoring
@@ -54,18 +69,9 @@ import Hgs.Why (renderWhyFrom)
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter(..)
   )
-import Paths_cabal_plan_submit qualified as Paths
-import System.Directory (doesFileExist, listDirectory)
-import System.Environment (getArgs)
-import System.FilePath
-  ( (</>)
-  , dropTrailingPathSeparator
-  , makeRelative
-  , normalise
-  , takeExtension
+import Hgs.Sarif.Deprecated
+  ( deprecatedPackagesSarif
   )
-import System.Exit (die, exitFailure)
-import System.IO (hPutStrLn, stderr)
 import Hgs.Sarif.Enrich
   ( CabalLineIndex
   , enrichSarifValue
@@ -103,6 +109,16 @@ main = do
       enrichSarif AllLocalUnits planPath sarifPath
     ["enrich-sarif", "--production-only", planPath, sarifPath] ->
       enrichSarif ProductionLocalUnits planPath sarifPath
+    "deprecated-sarif" : rest ->
+      case parseDeprecatedSarifOptions rest of
+        Left err ->
+          die err
+        Right opts ->
+          deprecatedSarif
+            (deprecatedSarifLocalFilter opts)
+            (deprecatedSarifIgnoredPackages opts)
+            (deprecatedSarifPlanPath opts)
+            (deprecatedSarifMetadataPath opts)
     _ ->
       die usage
 
@@ -469,29 +485,88 @@ commonPrefixPath a b =
 
 splitPathParts :: FilePath -> [FilePath]
 splitPathParts =
-  filter (not . null) . splitOnSlash . normalise
+  splitDirectories . normalise
 
 joinPathParts :: [FilePath] -> FilePath
-joinPathParts parts =
-  case parts of
-    [] ->
-      "."
+joinPathParts =
+  \case
+    [] -> "."
+    xs -> joinPath xs
 
-    _ ->
-      "/" <> foldr1 (\x y -> x <> "/" <> y) parts
+data DeprecatedSarifOptions = DeprecatedSarifOptions
+  { deprecatedSarifLocalFilter     :: LocalUnitFilter
+  , deprecatedSarifIgnoredPackages :: Set PackageName
+  , deprecatedSarifPlanPath        :: FilePath
+  , deprecatedSarifMetadataPath    :: FilePath
+  }
+  deriving stock (Eq, Show)
 
-splitOnSlash :: FilePath -> [FilePath]
-splitOnSlash =
-  go []
+defaultDeprecatedSarifOptions :: DeprecatedSarifOptions
+defaultDeprecatedSarifOptions =
+  DeprecatedSarifOptions
+    { deprecatedSarifLocalFilter = AllLocalUnits
+    , deprecatedSarifIgnoredPackages = Set.empty
+    , deprecatedSarifPlanPath = ""
+    , deprecatedSarifMetadataPath = ""
+    }
+
+parseDeprecatedSarifOptions :: [String] -> Either String DeprecatedSarifOptions
+parseDeprecatedSarifOptions =
+  go defaultDeprecatedSarifOptions
  where
-  go acc [] =
-    [reverse acc]
+  go opts =
+    \case
+      "--production-only" : rest ->
+        go opts { deprecatedSarifLocalFilter = ProductionLocalUnits } rest
 
-  go acc ('/' : xs) =
-    reverse acc : go [] xs
+      "--ignore-package" : pkgName : rest ->
+        go
+          opts
+            { deprecatedSarifIgnoredPackages =
+                Set.insert
+                  (PackageName (Text.pack pkgName))
+                  (deprecatedSarifIgnoredPackages opts)
+            }
+          rest
 
-  go acc (x : xs) =
-    go (x : acc) xs
+      [planPath, metadataPath] ->
+        Right
+          opts
+            { deprecatedSarifPlanPath = planPath
+            , deprecatedSarifMetadataPath = metadataPath
+            }
+
+      _ ->
+        Left usage
+
+deprecatedSarif :: LocalUnitFilter -> Set PackageName -> FilePath -> FilePath -> IO ()
+deprecatedSarif localFilter ignoredPackages planPath deprecatedPath = do
+  plan <- readPlanOrDie planPath
+  eIndex <- readDeprecationIndex deprecatedPath
+  case eIndex of
+    Left err ->
+      die ("failed to parse deprecated metadata: " <> err)
+
+    Right index -> do
+      let graph =
+            extractPlanGraph plan
+
+          repoRoot =
+            guessRepoRoot graph
+
+      lineIndex <- buildCabalLineIndex repoRoot graph
+
+      let deprecated =
+            filterDeprecatedPackagesIgnoring
+              ignoredPackages
+              (findDeprecatedPackagesFrom localFilter index graph)
+
+      LBS8.putStrLn $
+        Aeson.encode $
+          deprecatedPackagesSarif
+            lineIndex
+            repoRoot
+            deprecated
 
 usage :: String
 usage =
@@ -509,4 +584,5 @@ usage =
     , "  cabal-plan-submit why --production-only PATH_TO_PLAN_JSON PACKAGE_NAME"
     , "  cabal-plan-submit enrich-sarif PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
     , "  cabal-plan-submit enrich-sarif --production-only PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
+    , "  cabal-plan-submit deprecated-sarif [--production-only] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     ]
