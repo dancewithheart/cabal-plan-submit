@@ -42,6 +42,19 @@ jobs:
           ghc-version: "9.6.7"
           cabal-version: "3.14"
 
+      - name: Cache Cabal store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/store
+            ~/.cabal/packages
+            cabal-plan-submit/dist-newstyle
+            cabal-audit/dist-newstyle
+            project/dist-newstyle
+          key: ${{ runner.os }}-ghc-9.6.7-cabal-3.14-${{ hashFiles('project/**/*.cabal', 'project/cabal.project*', 'cabal-plan-submit/**/*.cabal', 'cabal-plan-submit/cabal.project*', 'cabal-audit/**/*.cabal', 'cabal-audit/cabal.project*') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-9.6.7-cabal-3.14-
+
       - name: Build target project
         working-directory: project
         run: cabal build all
