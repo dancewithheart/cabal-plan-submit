@@ -66,3 +66,16 @@
 * fix for empty file.source_location.
 * Add `inspect-deprecated --fail-on none|direct|any`.
 * Add `inspect-locals` to list locally defined stanza.
+
+## 0.1.0.9 -- 2026-05-30
+
+* Add `enrich-sarif` for augmenting `cabal-audit` SARIF output with Cabal solved-plan information.
+* Add dependency-path explanations to SARIF messages and properties.
+* Classify SARIF findings as direct or transitive dependencies.
+* Lower SARIF level / severity for transitive dependency findings.
+* Add SARIF tags such as `direct-dependency` and `transitive-dependency`.
+* Rewrite placeholder project-root SARIF locations to repo-relative `.cabal` files.
+* Add precise `.cabal` line locations for the first local dependency on each dependency path.
+* Add `deprecated-sarif` for emitting SARIF results for deprecated Hackage packages.
+* Include deprecated package replacements, dependency paths, direct/transitive relationship, and precise `.cabal` locations in generated SARIF.
+* Support `--production-only` and `--ignore-package` for deprecated SARIF output.

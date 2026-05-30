@@ -17,10 +17,11 @@ module Hgs.Deprecated
 import Data.Aeson (Value(..))
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Foldable (asum)
 import Data.List (nub)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, listToMaybe, mapMaybe)
+import Data.Maybe (listToMaybe, mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -177,7 +178,7 @@ replacementsFromObject o =
 
 reasonFromObject :: KeyMap.KeyMap Value -> Maybe Text
 reasonFromObject o =
-  firstJust
+  asum
     [ textField "reason" o
     , textField "message" o
     , textField "description" o
@@ -326,10 +327,6 @@ packageNameText =
 versionText :: Version -> String
 versionText =
   Text.unpack . unVersion
-
-firstJust :: [Maybe a] -> Maybe a
-firstJust =
-  listToMaybe . catMaybes
 
 maybeToList :: Maybe a -> [a]
 maybeToList =

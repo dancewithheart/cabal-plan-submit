@@ -173,21 +173,3 @@ Running tests:
 ```sh
 cabal test
 ```
-
-Manual validation:
-
-Sanity check top-level fields:
-```sh
-jq '{version, sha, ref, job, detector, scanned, manifests: (.manifests | keys)}' snapshot.json
-```
-
-Count resolved packages:
-```sh
-jq '.manifests["cabal-project"].resolved | length' snapshot.json
-```
-
-Show a few resolved entries:
-```sh
-jq '.manifests["cabal-project"].resolved | to_entries[:5]' snapshot.json
-```
-

@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               cabal-plan-submit
-version:            0.1.0.8
+version:            0.1.0.9
 build-type:         Simple
 license:            MIT
 license-file:       LICENSE
@@ -12,6 +12,7 @@ executable cabal-plan-submit
   other-modules:
     Hgs.Deprecated
     Hgs.Domain
+    Hgs.Sarif.Deprecated
     Hgs.Sarif.Enrich
     Hgs.Extract
     Hgs.Locals

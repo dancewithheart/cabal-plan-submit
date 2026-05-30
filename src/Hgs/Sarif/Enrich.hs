@@ -12,6 +12,7 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap (KeyMap)
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Foldable (asum)
 import Data.Set qualified as Set
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
@@ -111,7 +112,7 @@ explainResult localFilter graph result = do
 
 findMentionedPackage :: PlanGraph -> Value -> Maybe Package
 findMentionedPackage graph result =
-  firstJust
+  asum
     [ packageFromConcernedNames
     , exactVersionMatch
     ]
@@ -131,7 +132,7 @@ findMentionedPackage graph result =
       ]
 
   packageFromConcernedNames =
-    firstJust
+    asum
       [ Just pkg
       | name <- concernedNames
       , pkg <- candidatePackages
@@ -139,7 +140,7 @@ findMentionedPackage graph result =
       ]
 
   exactVersionMatch =
-    firstJust
+    asum
       [ Just pkg
       | pkg <- candidatePackages
       , exactPackageNameMentioned pkg haystack
@@ -265,18 +266,6 @@ localRootAndDirectDependency path =
     _ ->
       Nothing
 
-uniqueLocalRoots :: [PackagePath] -> [Package]
-uniqueLocalRoots paths =
-  nubOn packageKey
-    [ root
-    | PackagePath (root : _) <- paths
-    , packageSource root == PackageLocal
-    ]
-
-packageKey :: Package -> (PackageName, Version)
-packageKey pkg =
-  (packageName pkg, packageVersion pkg)
-
 locationValue :: FilePath -> Maybe Int -> Value
 locationValue cabalFile maybeLine =
   Object $
@@ -315,22 +304,6 @@ repoRelativePath repoRoot path =
     makeRelative
       (normalise repoRoot)
       (normalise path)
-
-nubOn :: Ord b => (a -> b) -> [a] -> [a]
-nubOn f =
-  go Set.empty
- where
-  go _ [] =
-    []
-
-  go seen (x : xs)
-    | key `Set.member` seen =
-        go seen xs
-    | otherwise =
-        x : go (Set.insert key seen) xs
-   where
-    key =
-      f x
 
 addMessageExplanation :: FindingExplanation -> KeyMap Value -> KeyMap Value
 addMessageExplanation explanation o =
@@ -478,13 +451,6 @@ collectStrings =
     Bool _ -> []
     Null -> []
 
-firstJust :: [Maybe a] -> Maybe a
-firstJust =
-  \case
-    [] -> Nothing
-    Nothing : xs -> firstJust xs
-    Just x : _ -> Just x
-
 repairRootLocations :: FilePath -> PlanGraph -> KeyMap Value -> KeyMap Value
 repairRootLocations repoRoot graph o =
   case KeyMap.lookup "locations" o of
@@ -561,7 +527,7 @@ sarifRunRoot :: KeyMap Value -> Maybe FilePath
 sarifRunRoot run =
   case KeyMap.lookup "artifacts" run of
     Just (Array artifacts) ->
-      firstJust
+      asum
         [ uriToPath <$> artifactUri artifact
         | artifact <- Vector.toList artifacts
         ]
