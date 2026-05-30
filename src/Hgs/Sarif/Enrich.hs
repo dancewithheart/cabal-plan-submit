@@ -3,7 +3,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hgs.Sarif.Enrich
-  ( enrichSarifValue
+  ( CabalLineIndex
+  , enrichSarifValue
   ) where
 
 import Data.Aeson (Value(..))
@@ -14,7 +15,8 @@ import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Set qualified as Set
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Map.Strict (Map)
+import Data.Maybe (fromMaybe, maybeToList)
 import System.FilePath
   ( (</>)
   , dropTrailingPathSeparator
@@ -42,6 +44,8 @@ import Hgs.Why
   , shortestPathsToPackageFrom
   )
 
+type CabalLineIndex = Map (FilePath, PackageName) Int
+
 data FindingExplanation = FindingExplanation
   { explainedPackage      :: Package
   , explainedRelationship :: Text
@@ -49,30 +53,30 @@ data FindingExplanation = FindingExplanation
   }
   deriving stock (Eq, Show)
 
-enrichSarifValue :: LocalUnitFilter -> PlanGraph -> Value -> Value
-enrichSarifValue localFilter graph =
+enrichSarifValue :: CabalLineIndex -> LocalUnitFilter -> PlanGraph -> Value -> Value
+enrichSarifValue lineIndex localFilter graph =
   \case
     Object o ->
-      Object (adjustArrayField "runs" (enrichRun localFilter graph) o)
+      Object (adjustArrayField "runs" (enrichRun lineIndex localFilter graph) o)
 
     other ->
       other
 
-enrichRun :: LocalUnitFilter -> PlanGraph -> Value -> Value
-enrichRun localFilter graph =
+enrichRun :: CabalLineIndex -> LocalUnitFilter -> PlanGraph -> Value -> Value
+enrichRun lineIndex localFilter graph =
   \case
     Object o ->
       let repoRoot =
             fromMaybe
               (guessRepoRoot graph)
               (sarifRunRoot o)
-       in Object (adjustArrayField "results" (enrichResult repoRoot localFilter graph) o)
+       in Object (adjustArrayField "results" (enrichResult lineIndex repoRoot localFilter graph) o)
 
     other ->
       other
 
-enrichResult :: FilePath -> LocalUnitFilter -> PlanGraph -> Value -> Value
-enrichResult repoRoot localFilter graph result =
+enrichResult :: CabalLineIndex -> FilePath -> LocalUnitFilter -> PlanGraph -> Value -> Value
+enrichResult lineIndex repoRoot localFilter graph result =
   case result of
     Object o ->
       case explainResult localFilter graph result of
@@ -80,7 +84,7 @@ enrichResult repoRoot localFilter graph result =
           Object (repairRootLocations repoRoot graph o)
 
         Just explanation ->
-          Object (addExplanation repoRoot explanation o)
+          Object (addExplanation lineIndex repoRoot explanation o)
 
     _ ->
       result
@@ -214,10 +218,10 @@ relationshipFromPaths paths
       _ ->
         False
 
-addExplanation :: FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
-addExplanation repoRoot explanation =
+addExplanation :: CabalLineIndex -> FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
+addExplanation lineIndex repoRoot explanation =
   addLevel explanation
-    . addLocations repoRoot explanation
+    . addLocations lineIndex repoRoot explanation
     . addProperties explanation
     . addMessageExplanation explanation
 
@@ -233,21 +237,33 @@ addLevel explanation o =
     _ ->
       o
 
-addLocations :: FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
-addLocations repoRoot explanation o =
-  case explanationLocations repoRoot explanation of
+addLocations :: CabalLineIndex -> FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
+addLocations lineIndex repoRoot explanation o =
+  case explanationLocations lineIndex repoRoot explanation of
     [] ->
       o
 
     locations ->
       KeyMap.insert "locations" (Array (Vector.fromList locations)) o
 
-explanationLocations :: FilePath -> FindingExplanation -> [Value]
-explanationLocations repoRoot explanation =
-  [ locationValue repoRoot root path
-  | root <- uniqueLocalRoots (explainedPaths explanation)
-  , path <- maybeToList (packageSourcePath root)
+explanationLocations :: CabalLineIndex -> FilePath -> FindingExplanation -> [Value]
+explanationLocations lineIndex repoRoot explanation =
+  [ locationValue cabalFile line
+  | path <- explainedPaths explanation
+  , (root, directDep) <- maybeToList (localRootAndDirectDependency path)
+  , sourcePath <- maybeToList (packageSourcePath root)
+  , let cabalFile = repoRelativePath repoRoot (localPackageCabalFile root sourcePath)
+  , let line = Map.lookup (cabalFile, packageName directDep) lineIndex
   ]
+
+localRootAndDirectDependency :: PackagePath -> Maybe (Package, Package)
+localRootAndDirectDependency path =
+  case unPackagePath path of
+    root : directDep : _ ->
+      Just (root, directDep)
+
+    _ ->
+      Nothing
 
 uniqueLocalRoots :: [PackagePath] -> [Package]
 uniqueLocalRoots paths =
@@ -261,8 +277,8 @@ packageKey :: Package -> (PackageName, Version)
 packageKey pkg =
   (packageName pkg, packageVersion pkg)
 
-locationValue :: FilePath -> Package -> FilePath -> Value
-locationValue repoRoot root path =
+locationValue :: FilePath -> Maybe Int -> Value
+locationValue cabalFile maybeLine =
   Object $
     KeyMap.fromList
       [ ( "physicalLocation"
@@ -271,13 +287,13 @@ locationValue repoRoot root path =
               [ ( "artifactLocation"
                 , Object $
                     KeyMap.fromList
-                      [ ("uri", String (Text.pack (repoRelativePath repoRoot (localPackageCabalFile root path))))
+                      [ ("uri", String (Text.pack cabalFile))
                       ]
                 )
               , ( "region"
                 , Object $
                     KeyMap.fromList
-                      [ ("startLine", Aeson.toJSON (1 :: Int))
+                      [ ("startLine", Aeson.toJSON (fromMaybe 1 maybeLine))
                       , ("startColumn", Aeson.toJSON (1 :: Int))
                       ]
                 )
@@ -315,10 +331,6 @@ nubOn f =
    where
     key =
       f x
-
-maybeToList :: Maybe a -> [a]
-maybeToList =
-  maybe [] pure
 
 addMessageExplanation :: FindingExplanation -> KeyMap Value -> KeyMap Value
 addMessageExplanation explanation o =
@@ -387,6 +399,7 @@ addProperties explanation o =
       _ -> KeyMap.empty
 
   properties' =
+    KeyMap.insert "tags" (Aeson.toJSON (mergedTags oldProperties explanation)) $
     KeyMap.union
       (KeyMap.fromList
         [ ("cabal-plan-submit.package", String (renderPackageText (explainedPackage explanation)))
@@ -397,11 +410,25 @@ addProperties explanation o =
               | path <- explainedPaths explanation
               ]
           )
-        , ("tags", Aeson.toJSON (resultTags explanation))
         , ("precision", String "medium")
         , ("problem.severity", String (problemSeverity explanation))
         ])
       oldProperties
+
+mergedTags :: KeyMap Value -> FindingExplanation -> [Text]
+mergedTags oldProperties explanation =
+  dedupeText (oldTags oldProperties <> resultTags explanation)
+
+oldTags :: KeyMap Value -> [Text]
+oldTags oldProperties =
+  case KeyMap.lookup "tags" oldProperties of
+    Just (Array tags) ->
+      [ tag
+      | String tag <- Vector.toList tags
+      ]
+
+    _ ->
+      []
 
 resultTags :: FindingExplanation -> [Text]
 resultTags explanation =
