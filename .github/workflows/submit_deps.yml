@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: security-code-scanning-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write          # dependency submission API
   security-events: write   # Code Scanning SARIF upload
@@ -62,7 +66,7 @@ jobs:
           SHA: ${{ github.sha }}
           REF: ${{ github.ref }}
         run: |
-          BIN="$(cd ../cabal-plan-submit && cabal list-bin exe:cabal-plan-submit)"
+          BIN="$(cd ../cabal-plan-submit && cabal list-bin exe:cabal-plan-submit | tail -n 1)"
           "$BIN" render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > ../snapshot.json
           "$BIN" validate-snapshot ../snapshot.json
 
@@ -97,13 +101,13 @@ jobs:
       - name: Run cabal-audit SARIF
         working-directory: project
         run: |
-          CABAL_AUDIT="$(cd ../cabal-audit && cabal list-bin exe:cabal-audit)"
+          CABAL_AUDIT="$(cd ../cabal-audit && cabal list-bin exe:cabal-audit | tail -n 1)"
           "$CABAL_AUDIT" --sarif > ../cabal-audit.sarif
 
       - name: Enrich cabal-audit SARIF with Cabal dependency paths
         working-directory: project
         run: |
-          BIN="$(cd ../cabal-plan-submit && cabal list-bin exe:cabal-plan-submit)"
+          BIN="$(cd ../cabal-plan-submit && cabal list-bin exe:cabal-plan-submit | tail -n 1)"
           "$BIN" enrich-sarif \
             dist-newstyle/cache/plan.json \
             ../cabal-audit.sarif \
@@ -112,7 +116,7 @@ jobs:
       - name: Generate deprecated-package SARIF
         working-directory: project
         run: |
-          BIN="$(cd ../cabal-plan-submit && cabal list-bin exe:cabal-plan-submit)"
+          BIN="$(cd ../cabal-plan-submit && cabal list-bin exe:cabal-plan-submit | tail -n 1)"
           "$BIN" deprecated-sarif \
             --production-only \
             dist-newstyle/cache/plan.json \
