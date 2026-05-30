@@ -33,9 +33,10 @@ jobs:
       - name: Checkout cabal-audit
         uses: actions/checkout@v6
         with:
-          repository: MangoIV/cabal-audit
+          repository: dancewithheart/cabal-audit
+          ref: sarif-github-code-scanning
           path: cabal-audit
-
+             
       - name: Setup Haskell
         uses: haskell-actions/setup@v2
         with:
