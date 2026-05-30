@@ -4,8 +4,15 @@
 
 module Main (main) where
 
+import Control.Exception (IOException, try)
 import Control.Monad (when)
+import Data.Aeson qualified as Aeson
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy.Char8 qualified as LBS8
+import Data.Char (isAlphaNum)
+import qualified Data.Map as Map
+import Data.Maybe (maybeToList)
 import Data.List (isSuffixOf, sort)
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -20,7 +27,13 @@ import Hgs.Deprecated
   , renderDeprecatedPackages
   , shouldFailOnDeprecated
   )
-import Hgs.Domain (RawPlan)
+import Hgs.Domain
+  ( Package(..)
+  , PackageName(..)
+  , PackageSource(..)
+  , PlanGraph(..)
+  , RawPlan
+  )
 import Hgs.Extract (extractPlanGraph, summarisePlanGraph)
 import Hgs.Input.PlanJson (readRawPlan, summariseRawPlan)
 import Hgs.Locals
@@ -37,7 +50,6 @@ import Hgs.Validate
   , renderValidationReport
   , validateSnapshotFile
   )
-import Hgs.Domain (PackageName(..))
 import Hgs.Why (renderWhyFrom)
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter(..)
@@ -45,8 +57,19 @@ import Hgs.LocalUnitFilter
 import Paths_cabal_plan_submit qualified as Paths
 import System.Directory (doesFileExist, listDirectory)
 import System.Environment (getArgs)
+import System.FilePath
+  ( (</>)
+  , dropTrailingPathSeparator
+  , makeRelative
+  , normalise
+  , takeExtension
+  )
 import System.Exit (die, exitFailure)
 import System.IO (hPutStrLn, stderr)
+import Hgs.Sarif.Enrich
+  ( CabalLineIndex
+  , enrichSarifValue
+  )
 
 main :: IO ()
 main = do
@@ -76,6 +99,10 @@ main = do
       whyPackage AllLocalUnits path packageName
     ["inspect-locals", path] ->
       inspectLocalPackages path
+    ["enrich-sarif", planPath, sarifPath] ->
+      enrichSarif AllLocalUnits planPath sarifPath
+    ["enrich-sarif", "--production-only", planPath, sarifPath] ->
+      enrichSarif ProductionLocalUnits planPath sarifPath
     _ ->
       die usage
 
@@ -268,6 +295,204 @@ inspectLocalPackages path = do
     renderLocals
       (inspectLocals (extractPlanGraph plan))
 
+enrichSarif :: LocalUnitFilter -> FilePath -> FilePath -> IO ()
+enrichSarif localFilter planPath sarifPath = do
+  plan <- readPlanOrDie planPath
+  let graph = extractPlanGraph plan
+  let repoRoot = guessRepoRoot graph
+  lineIndex <- buildCabalLineIndex repoRoot graph
+  sarifBytes <- readSarifFileOrDie sarifPath
+
+  case Aeson.eitherDecodeStrict' sarifBytes of
+    Left err ->
+      die ("failed to parse SARIF JSON: " <> err)
+
+    Right sarif ->
+      case sarif of
+        Aeson.Object o
+          | Just (Aeson.Array _) <- KeyMap.lookup "runs" o ->
+              LBS8.putStrLn $
+                Aeson.encode $
+                  enrichSarifValue
+                    lineIndex
+                    localFilter
+                    graph
+                    sarif
+        _ ->
+           die "invalid SARIF JSON: expected top-level object with a 'runs' array"
+
+readSarifFileOrDie :: FilePath -> IO BS.ByteString
+readSarifFileOrDie sarifPath = do
+  result <- try (BS.readFile sarifPath) :: IO (Either IOException BS.ByteString)
+  case result of
+    Left err ->
+      die $
+        unlines
+          [ "failed to read SARIF file: " <> sarifPath
+          , show err
+          , ""
+          , "Expected cabal-audit SARIF JSON. Example:"
+          , "  cabal-audit --sarif > cabal-audit.sarif"
+          ]
+
+    Right bytes ->
+      pure bytes
+
+-- line-index helpers
+
+buildCabalLineIndex :: FilePath -> PlanGraph -> IO CabalLineIndex
+buildCabalLineIndex repoRoot graph =
+  fmap Map.unions $
+    traverse (cabalLineIndexForLocalPackage repoRoot) localPackages
+ where
+  localPackages =
+    [ pkg
+    | pkg <- Map.elems (planGraphPackages graph)
+    , packageSource pkg == PackageLocal
+    ]
+
+cabalLineIndexForLocalPackage :: FilePath -> Package -> IO CabalLineIndex
+cabalLineIndexForLocalPackage repoRoot pkg =
+  case packageSourcePath pkg of
+    Nothing ->
+      pure Map.empty
+
+    Just sourcePath -> do
+      let cabalFile =
+            localPackageCabalFile pkg sourcePath
+      exists <- doesFileExist cabalFile
+      if exists
+        then do
+          contents <- readFile cabalFile
+          pure (indexCabalFile repoRoot cabalFile contents)
+        else
+          pure Map.empty
+
+indexCabalFile :: FilePath -> FilePath -> String -> CabalLineIndex
+indexCabalFile repoRoot cabalFile contents =
+  Map.fromListWith min
+    [ ( (repoRelativeCabalFile repoRoot cabalFile, PackageName (Text.pack token))
+      , lineNo
+      )
+    | (lineNo, line) <- zip [1 :: Int ..] (lines contents)
+    , token <- packageTokens line
+    ]
+
+packageTokens :: String -> [String]
+packageTokens =
+  filter plausiblePackageName
+    . wordsBy (not . isPackageNameChar)
+    . stripLineComment
+
+stripLineComment :: String -> String
+stripLineComment =
+  takeUntilDashDash
+ where
+  takeUntilDashDash [] =
+    []
+
+  takeUntilDashDash [x] =
+    [x]
+
+  takeUntilDashDash ('-' : '-' : _) =
+    []
+
+  takeUntilDashDash (x : xs) =
+    x : takeUntilDashDash xs
+
+isPackageNameChar :: Char -> Bool
+isPackageNameChar c =
+  isAlphaNum c || c == '-' || c == '_'
+
+plausiblePackageName :: String -> Bool
+plausiblePackageName token =
+  '-' `elem` token || all isAlphaNum token
+
+wordsBy :: (Char -> Bool) -> String -> [String]
+wordsBy p =
+  go
+ where
+  go [] =
+    []
+
+  go xs =
+    case dropWhile p xs of
+      [] ->
+        []
+
+      ys ->
+        let (word, rest) = break p ys
+         in word : go rest
+
+-- cabal file helpers
+
+localPackageCabalFile :: Package -> FilePath -> FilePath
+localPackageCabalFile pkg path
+  | takeExtension path == ".cabal" =
+      normalise path
+
+  | otherwise =
+      normalise path </> Text.unpack (unPackageName (packageName pkg)) <> ".cabal"
+
+repoRelativeCabalFile :: FilePath -> FilePath -> FilePath
+repoRelativeCabalFile repoRoot path =
+  normalise $
+    makeRelative
+      (normalise repoRoot)
+      (normalise path)
+
+guessRepoRoot :: PlanGraph -> FilePath
+guessRepoRoot graph =
+  case localSourcePaths of
+    [] ->
+      "."
+
+    [path] ->
+      dropTrailingPathSeparator (normalise path)
+
+    path : rest ->
+      foldl commonPrefixPath path rest
+ where
+  localSourcePaths =
+    [ dropTrailingPathSeparator (normalise path)
+    | pkg <- Map.elems (planGraphPackages graph)
+    , packageSource pkg == PackageLocal
+    , path <- maybeToList (packageSourcePath pkg)
+    ]
+
+commonPrefixPath :: FilePath -> FilePath -> FilePath
+commonPrefixPath a b =
+  joinPathParts $
+    map fst $
+      takeWhile (uncurry (==)) $
+        zip (splitPathParts a) (splitPathParts b)
+
+splitPathParts :: FilePath -> [FilePath]
+splitPathParts =
+  filter (not . null) . splitOnSlash . normalise
+
+joinPathParts :: [FilePath] -> FilePath
+joinPathParts parts =
+  case parts of
+    [] ->
+      "."
+
+    _ ->
+      "/" <> foldr1 (\x y -> x <> "/" <> y) parts
+
+splitOnSlash :: FilePath -> [FilePath]
+splitOnSlash =
+  go []
+ where
+  go acc [] =
+    [reverse acc]
+
+  go acc ('/' : xs) =
+    reverse acc : go [] xs
+
+  go acc (x : xs) =
+    go (x : acc) xs
+
 usage :: String
 usage =
   unlines
@@ -282,4 +507,6 @@ usage =
     , "  cabal-plan-submit inspect-deprecated [--production-only] [--fail-on none|direct|any] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     , "  cabal-plan-submit why PATH_TO_PLAN_JSON PACKAGE_NAME"
     , "  cabal-plan-submit why --production-only PATH_TO_PLAN_JSON PACKAGE_NAME"
+    , "  cabal-plan-submit enrich-sarif PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
+    , "  cabal-plan-submit enrich-sarif --production-only PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
     ]
