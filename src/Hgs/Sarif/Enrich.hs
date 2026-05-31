@@ -214,10 +214,8 @@ relationshipFromPaths paths
  where
   isDirectPath path =
     case unPackagePath path of
-      [_localRoot, _target] ->
-        True
-      _ ->
-        False
+      [_localRoot, _target] -> True
+      _                     -> False
 
 addExplanation :: CabalLineIndex -> FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
 addExplanation lineIndex repoRoot explanation =
@@ -226,26 +224,42 @@ addExplanation lineIndex repoRoot explanation =
     . addProperties explanation
     . addMessageExplanation explanation
 
-addLevel :: FindingExplanation -> KeyMap Value -> KeyMap Value
-addLevel explanation o =
+data EffectiveSeverity
+  = EffectiveError
+  | EffectiveWarning
+  | EffectiveNote
+  deriving stock (Eq, Ord, Show)
+
+effectiveSeverity :: FindingExplanation -> EffectiveSeverity
+effectiveSeverity explanation =
   case explainedRelationship explanation of
-    "direct" ->
-      KeyMap.insert "level" (String "error") o
+    "direct"   -> EffectiveError
+    "indirect" -> EffectiveNote
+    _          -> EffectiveNote
 
-    "indirect" ->
-      KeyMap.insert "level" (String "warning") o
+sarifLevel :: EffectiveSeverity -> Text
+sarifLevel =
+  \case
+    EffectiveError   -> "error"
+    EffectiveWarning -> "warning"
+    EffectiveNote    -> "note"
 
-    _ ->
-      o
+problemSeverityText :: EffectiveSeverity -> Text
+problemSeverityText =
+  \case
+    EffectiveError   -> "error"
+    EffectiveWarning -> "warning"
+    EffectiveNote    -> "recommendation"
+
+addLevel :: FindingExplanation -> KeyMap Value -> KeyMap Value
+addLevel explanation =
+  KeyMap.insert "level" (String (sarifLevel (effectiveSeverity explanation)))
 
 addLocations :: CabalLineIndex -> FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
 addLocations lineIndex repoRoot explanation o =
   case explanationLocations lineIndex repoRoot explanation of
-    [] ->
-      o
-
-    locations ->
-      KeyMap.insert "locations" (Array (Vector.fromList locations)) o
+    []        -> o
+    locations -> KeyMap.insert "locations" (Array (Vector.fromList locations)) o
 
 explanationLocations :: CabalLineIndex -> FilePath -> FindingExplanation -> [Value]
 explanationLocations lineIndex repoRoot explanation =
@@ -260,11 +274,8 @@ explanationLocations lineIndex repoRoot explanation =
 localRootAndDirectDependency :: PackagePath -> Maybe (Package, Package)
 localRootAndDirectDependency path =
   case unPackagePath path of
-    root : directDep : _ ->
-      Just (root, directDep)
-
-    _ ->
-      Nothing
+    root : directDep : _ -> Just (root, directDep)
+    _                    -> Nothing
 
 locationValue :: FilePath -> Maybe Int -> Value
 locationValue cabalFile maybeLine =
@@ -319,17 +330,25 @@ addMessageExplanation explanation o =
       Just (String t) -> t
       _ -> ""
 
+  cvssText = resultSecuritySeverity o
+
   oldMarkdown =
     case KeyMap.lookup "markdown" oldMessage of
       Just (String t) -> t
       _ -> ""
 
   message' =
-    KeyMap.insert "markdown" (String (appendExplanationMarkdown oldMarkdown explanation)) $
-      KeyMap.insert "text" (String (appendExplanationText oldText explanation)) oldMessage
+    KeyMap.insert "markdown" (String (appendExplanationMarkdown cvssText oldMarkdown explanation)) $
+      KeyMap.insert "text" (String (appendExplanationText cvssText oldText explanation)) oldMessage
 
-appendExplanationText :: Text -> FindingExplanation -> Text
-appendExplanationText oldText explanation =
+resultSecuritySeverity :: KeyMap Value -> Maybe Text
+resultSecuritySeverity resultObject = do
+  Object properties <- KeyMap.lookup "properties" resultObject
+  String severity <- KeyMap.lookup "security-severity" properties
+  pure severity
+
+appendExplanationText :: Maybe Text -> Text -> FindingExplanation -> Text
+appendExplanationText cvssText oldText explanation =
   Text.stripEnd oldText
     <> "\n\ncabal-plan-submit:\n"
     <> "  package: "
@@ -338,14 +357,18 @@ appendExplanationText oldText explanation =
     <> "  relationship: "
     <> explainedRelationship explanation
     <> "\n"
+    <> "  effective severity: "
+    <> problemSeverity explanation
+    <> "\n"
+    <> foldMap (\cvss -> "  advisory CVSS: " <> cvss <> "\n") cvssText
     <> "  paths:\n"
     <> Text.concat
       [ "    - " <> Text.pack (renderPackagePath path) <> "\n"
       | path <- explainedPaths explanation
       ]
 
-appendExplanationMarkdown :: Text -> FindingExplanation -> Text
-appendExplanationMarkdown oldMarkdown explanation =
+appendExplanationMarkdown :: Maybe Text -> Text -> FindingExplanation -> Text
+appendExplanationMarkdown cvssText oldMarkdown explanation =
   Text.stripEnd oldMarkdown
     <> "\n\n## cabal-plan-submit dependency path\n\n"
     <> "* package: `"
@@ -354,6 +377,10 @@ appendExplanationMarkdown oldMarkdown explanation =
     <> "* relationship: `"
     <> explainedRelationship explanation
     <> "`\n"
+    <> "* effective severity: `"
+    <> problemSeverity explanation
+    <> "`\n"
+    <> foldMap (\cvss -> "* advisory CVSS: `" <> cvss <> "`\n") cvssText
     <> "* paths:\n"
     <> Text.concat
       [ "  * `"
@@ -385,6 +412,7 @@ addProperties explanation o =
           )
         , ("precision", String "medium")
         , ("problem.severity", String (problemSeverity explanation))
+        , ("cabal-plan-submit.effective-severity", String (problemSeverity explanation))
         ])
       oldProperties
 
@@ -408,23 +436,36 @@ resultTags explanation =
   [ "haskell"
   , "cabal"
   , "dependency"
+  , "security"
   , "cabal-plan-submit"
-  , case explainedRelationship explanation of
-      "direct" -> "direct-dependency"
-      _        -> "transitive-dependency"
+  , relationshipTag explanation
+  , effectiveSeverityTag explanation
   ]
 
-problemSeverity :: FindingExplanation -> Text
-problemSeverity explanation =
+relationshipTag :: FindingExplanation -> Text
+relationshipTag explanation =
   case explainedRelationship explanation of
     "direct" ->
-      "error"
-
-    "indirect" ->
-      "warning"
+      "direct-dependency"
 
     _ ->
-      "recommendation"
+      "transitive-dependency"
+
+effectiveSeverityTag :: FindingExplanation -> Text
+effectiveSeverityTag explanation =
+  case effectiveSeverity explanation of
+    EffectiveError ->
+      "effective-severity-error"
+
+    EffectiveWarning ->
+      "effective-severity-warning"
+
+    EffectiveNote ->
+      "effective-severity-note"
+
+problemSeverity :: FindingExplanation -> Text
+problemSeverity =
+  problemSeverityText . effectiveSeverity
 
 renderPackageText :: Package -> Text
 renderPackageText pkg =
