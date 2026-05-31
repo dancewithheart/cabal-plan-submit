@@ -36,7 +36,7 @@ jobs:
           repository: dancewithheart/cabal-audit
           ref: sarif-github-code-scanning
           path: cabal-audit
-             
+
       - name: Setup Haskell
         uses: haskell-actions/setup@v2
         with:
@@ -116,7 +116,8 @@ jobs:
         working-directory: project
         run: |
           CABAL_AUDIT="$(cd ../cabal-audit && cabal list-bin exe:cabal-audit | tail -n 1)"
-          "$CABAL_AUDIT" --sarif > ../cabal-audit.sarif
+          "$CABAL_AUDIT" --sarif --to-file ../cabal-audit.sarif
+          jq type ../cabal-audit.sarif
 
       - name: Enrich cabal-audit SARIF with Cabal dependency paths
         working-directory: project
