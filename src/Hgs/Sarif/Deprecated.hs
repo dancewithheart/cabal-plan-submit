@@ -54,63 +54,87 @@ deprecatedPackagesSarif lineIndex repoRoot deprecated =
             Vector.singleton $
               Object $
                 KeyMap.fromList
-                  [ ("tool", tool)
+                  [ ("tool", tool deprecated)
                   , ("results", Array (Vector.fromList (map (deprecatedResult lineIndex repoRoot) deprecated)))
                   ]
         )
       ]
 
-tool :: Value
-tool =
+tool :: [DeprecatedPackage] -> Value
+tool deprecated =
   Object $
     KeyMap.fromList
-      [ ( "driver"
+      [
+        ( "driver"
         , Object $
             KeyMap.fromList
               [ ("name", String "cabal-plan-submit")
               , ("informationUri", String "https://github.com/dancewithheart/cabal-plan-submit")
-              , ( "rules"
-                , Array $
-                    Vector.singleton $
-                      Object $
-                        KeyMap.fromList
-                          [ ("id", String "haskell.deprecated-package")
-                          , ("name", String "Deprecated Hackage package")
-                          , ("shortDescription", Object (KeyMap.fromList [("text", String "Deprecated Hackage package")]))
-                          , ( "fullDescription"
-                            , Object $
-                                KeyMap.fromList
-                                  [ ( "text"
-                                    , String "A resolved Cabal dependency is marked as deprecated in Hackage metadata."
-                                    )
-                                  ]
-                            )
-                          , ( "properties"
-                            , Object $
-                                KeyMap.fromList
-                                  [ ( "tags"
-                                    , Aeson.toJSON
-                                        [ "haskell" :: Text
-                                        , "cabal"
-                                        , "hackage"
-                                        , "deprecated-dependency"
-                                        ]
-                                    )
-                                  , ("precision", String "medium")
-                                  , ("problem.severity", String "warning")
-                                  ]
-                            )
-                          ]
-                )
+              , ("rules", Array $ Vector.fromList (map deprecatedRule deprecated))
               ]
         )
       ]
+
+deprecatedRule :: DeprecatedPackage -> Value
+deprecatedRule dep =
+  Object $
+    KeyMap.fromList
+      [ ("id", String (deprecatedRuleId dep))
+      , ("name", String (deprecatedRuleTitle dep))
+      ,
+        ( "shortDescription"
+        , Object $
+            KeyMap.fromList
+              [ ("text", String (deprecatedRuleTitle dep))
+              ]
+        )
+      ,
+        ( "fullDescription"
+        , Object $
+            KeyMap.fromList
+              [
+                ( "text"
+                , String $
+                    renderDeprecatedPackage dep
+                      <> " is a resolved Cabal dependency marked as deprecated in Hackage metadata."
+                )
+              ]
+        )
+      ,
+        ( "properties"
+        , Object $
+            KeyMap.fromList
+              [ ( "tags"
+                , Aeson.toJSON
+                    [ "haskell" :: Text
+                    , "cabal"
+                    , "hackage"
+                    , "deprecated-dependency"
+                    , unPackageName (deprecatedPackageName dep)
+                    ]
+                )
+              , ("precision", String "medium")
+              , ("problem.severity", String (deprecatedProblemSeverity dep))
+              ]
+        )
+      ]
+
+deprecatedRuleId :: DeprecatedPackage -> Text
+deprecatedRuleId dep =
+  "haskell.deprecated-package."
+    <> unPackageName (deprecatedPackageName dep)
+    <> "."
+    <> unVersion (deprecatedPackageVersion dep)
+
+deprecatedRuleTitle :: DeprecatedPackage -> Text
+deprecatedRuleTitle dep =
+  "Deprecated Hackage package: " <> renderDeprecatedPackage dep
 
 deprecatedResult :: CabalLineIndex -> FilePath -> DeprecatedPackage -> Value
 deprecatedResult lineIndex repoRoot dep =
   Object $
     KeyMap.fromList
-      [ ("ruleId", String "haskell.deprecated-package")
+      [ ("ruleId", String (deprecatedRuleId dep))
       , ("level", String (deprecatedLevel dep))
       , ("message", deprecatedMessage dep)
       , ("locations", Array (Vector.fromList (deprecatedLocations lineIndex repoRoot dep)))

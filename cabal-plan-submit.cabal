@@ -4,6 +4,22 @@ version:            0.1.0.9
 build-type:         Simple
 license:            MIT
 license-file:       LICENSE
+synopsis:            Haskell dependency intelligence for supply-chain security
+description:
+  cabal-plan-submit reads Cabal's resolved plan.json and helps make
+  dependency/security reports actionable. It can submit dependency snapshots
+  to GitHub Dependency Graph, explain dependency paths, inspect deprecated
+  Hackage packages, and enrich cabal-audit SARIF output.
+category:            Distribution, Security
+maintainer:          Piotr Paradzinski <piotr.paradzinski@gmail.com>
+homepage:            https://github.com/dancewithheart/cabal-plan-submit
+bug-reports:         https://github.com/dancewithheart/cabal-plan-submit/issues
+extra-doc-files:     README.md
+                   , CHANGELOG.md
+
+source-repository head
+  type: git
+  location: https://github.com/dancewithheart/cabal-plan-submit.git
 
 executable cabal-plan-submit
   main-is:          Main.hs
@@ -22,7 +38,16 @@ executable cabal-plan-submit
     Hgs.Input.PlanJson
     Hgs.Why
     Paths_cabal_plan_submit
-  ghc-options:      -Wall
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wmissing-export-lists
+    -Wmissing-home-modules
+    -Wpartial-fields
+    -Wredundant-constraints
   build-depends:
       base            >=4.16 && <5
     , aeson
@@ -55,7 +80,16 @@ test-suite plan-json-test
       LocalsSpec
       TestSupport
   default-language: GHC2021
-  ghc-options:      -Wall
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wmissing-export-lists
+    -Wmissing-home-modules
+    -Wpartial-fields
+    -Wredundant-constraints
   build-depends:
       base            >=4.16 && <5
     , aeson
