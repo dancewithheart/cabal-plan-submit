@@ -69,13 +69,14 @@
 
 ## 0.1.0.9 -- 2026-05-30
 
-* Add `enrich-sarif` for augmenting `cabal-audit` SARIF output with Cabal solved-plan information.
+* Add `enrich-sarif` for augmenting `cabal-audit` SARIF output with Cabal solved-plan information. ([#16](https://github.com/dancewithheart/cabal-plan-submit/pull/16))
 * Add dependency-path explanations to SARIF messages and properties.
 * Classify SARIF findings as direct or transitive dependencies.
-* Lower SARIF level / severity for transitive dependency findings.
 * Add SARIF tags such as `direct-dependency` and `transitive-dependency`.
 * Rewrite placeholder project-root SARIF locations to repo-relative `.cabal` files.
 * Add precise `.cabal` line locations for the first local dependency on each dependency path.
-* Add `deprecated-sarif` for emitting SARIF results for deprecated Hackage packages.
+* Lower SARIF level / severity for transitive dependency findings. ([#19](https://github.com/dancewithheart/cabal-plan-submit/pull/19))
+* Add `deprecated-sarif` for emitting SARIF results for deprecated Hackage packages. ([#17](https://github.com/dancewithheart/cabal-plan-submit/pull/17))
 * Include deprecated package replacements, dependency paths, direct/transitive relationship, and precise `.cabal` locations in generated SARIF.
-* Support `--production-only` and `--ignore-package` for deprecated SARIF output.
+* Support `--production-only` and `--ignore-package` for deprecated SARIF output. ([#9](https://github.com/dancewithheart/cabal-plan-submit/pull/9))
+* Add name of the deprecated library in issue title. ([#23](https://github.com/dancewithheart/cabal-plan-submit/issues/23))
