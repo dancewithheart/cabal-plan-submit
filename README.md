@@ -7,6 +7,8 @@ Haskell dependency intelligence for supply-chain security.
 - inspect deprecated Hackage packages
 - enrich cabal-audit SARIF with locations and dependency-path metadata
 
+[Blog post](https://dancewithheart.github.io/posts/2026-05-31-cabal-plan-submit.html) explaining example use cases.
+
 ## What it does
 
 `cabal-plan-submit` reads Cabal's `dist-newstyle/cache/plan.json` and helps with three practical workflows:
