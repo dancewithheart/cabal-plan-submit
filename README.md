@@ -1,6 +1,11 @@
 # cabal-plan-submit
 
-Extract a dependency graph for GitHub dependency submission snapshots.
+Haskell dependency intelligence for supply-chain security.
+- submit Cabal plan dependencies to GitHub Dependency Graph
+- explain dependency paths with `why`
+- classify direct vs transitive dependencies
+- inspect deprecated Hackage packages
+- enrich cabal-audit SARIF with locations and dependency-path metadata
 
 ## What it does
 
