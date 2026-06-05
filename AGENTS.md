@@ -38,7 +38,7 @@ Review priorities:
 
    * Use property tests when possible.
    * Use unit tests when they document specific behavior or reproduce a concrete regression.
-   * Use golden tests to have real examples they serve as acceptance tests.
+   * Use golden tests for examples of use cases.
    * Test names should describe observable behavior clearly so `cabal test` output documents the modules/features being checked.
 
 6. Prefer idiomatic Haskell.
