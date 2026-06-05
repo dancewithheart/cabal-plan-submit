@@ -1,4 +1,3 @@
-```
 # Repository guidelines
 
 This project is a small Haskell CLI/library for Cabal dependency graph analysis.
@@ -25,7 +24,7 @@ Review priorities:
 
    * Prefer ADTs that split the domain into composable cases which can be reasoned about and tested.
    * Make illegal states unrepresentable.
-   * Public functions should use the most precise domain types, awoid raw `Text`/`String`.
+   * Public functions should use the most precise domain types, avoid raw `Text`/`String`.
    * Use newtypes for package identity, version, unit id, PURL, dependency relationship, local-unit filter, and similar domain concepts.
    * Prefer explicit type signatures for exported functions and non-trivial internal functions.
 
@@ -71,4 +70,3 @@ Review priorities:
    * Keep subdomains graph, deprecation, SARIF, cli parsing, output pretty printing separate, coherent, composable.
    * Prefer pure functions that can later be extracted into a reusable library.
    * Favor changes that improve correctness, diagnostics, or user actionability over cosmetic churn.
-```
