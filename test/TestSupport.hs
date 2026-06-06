@@ -66,6 +66,7 @@ mkItem unitId deps isLocal n =
     , rawPlanItemId = Just unitId
     , rawPlanItemPkgName = Just (PackageName (toText ("pkg" <> show n)))
     , rawPlanItemPkgVersion = Just (Version "1.0.0")
+    , rawPlanItemComponents = []
     , rawPlanItemDepends = deps
     , rawPlanItemPkgSrc =
         if isLocal
@@ -81,6 +82,7 @@ mkLocal unitId deps =
     , rawPlanItemPkgName = Just (PackageName "root")
     , rawPlanItemPkgVersion = Just (Version "0.1.0.0")
     , rawPlanItemDepends = deps
+    , rawPlanItemComponents = []
     , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
     }
 
@@ -96,6 +98,7 @@ mkExternalWith unitId name version deps =
     , rawPlanItemPkgName = Just (PackageName name)
     , rawPlanItemPkgVersion = Just (Version version)
     , rawPlanItemDepends = deps
+    , rawPlanItemComponents = []
     , rawPlanItemPkgSrc = Nothing
     }
 

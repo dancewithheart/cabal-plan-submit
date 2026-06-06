@@ -10,10 +10,13 @@ import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Hgs.Domain
-  ( Package(..)
+  (
+  ComponentName(..)
+  , Package(..)
   , PackageName(..)
   , PackageSource(..)
   , PlanGraph(..)
+  , RawComponent(..)
   , RawPkgSrc(..)
   , RawPlan(..)
   , RawPlanItem(..)
@@ -68,6 +71,61 @@ spec = do
           expectationFailure err
         Right plan ->
           length (rawPlanItems plan) `shouldBe` 1
+
+    it "preserves component names and component dependency sets" $ do
+      let input =
+            "{\
+            \  \"install-plan\": [\
+            \    {\
+            \      \"type\": \"configured\",\
+            \      \"id\": \"unix-time-0.4.17-inplace\",\
+            \      \"pkg-name\": \"unix-time\",\
+            \      \"pkg-version\": \"0.4.17\",\
+            \      \"pkg-src\": { \"type\": \"local\", \"path\": \".\" },\
+            \      \"depends\": null,\
+            \      \"components\": {\
+            \        \"lib\": {\
+            \          \"depends\": [\
+            \            \"base-4.18.3.0\",\
+            \            \"old-time-1.1.1.0-oldtimehash\"\
+            \          ]\
+            \        },\
+            \        \"test:spec\": {\
+            \          \"depends\": [\
+            \            \"hspec-2.11.17-hspechash\",\
+            \            \"old-time-1.1.1.0-oldtimehash\"\
+            \          ]\
+            \        }\
+            \      }\
+            \    }\
+            \  ]\
+            \}"
+
+      case decodeRawPlan input of
+        Left err ->
+          expectationFailure err
+
+        Right plan ->
+          case rawPlanItems plan of
+            [item] -> do
+              fmap rawComponentName (rawPlanItemComponents item)
+                `shouldBe`
+                  [ ComponentName "lib"
+                  , ComponentName "test:spec"
+                  ]
+
+              fmap rawComponentDepends (rawPlanItemComponents item)
+                `shouldBe`
+                  [ [ UnitId "base-4.18.3.0"
+                    , UnitId "old-time-1.1.1.0-oldtimehash"
+                    ]
+                  , [ UnitId "hspec-2.11.17-hspechash"
+                    , UnitId "old-time-1.1.1.0-oldtimehash"
+                    ]
+                  ]
+
+            _ ->
+              expectationFailure "expected exactly one plan item"
 
     it "parses component dependencies when top-level depends is null" $ do
       let input =
@@ -149,6 +207,7 @@ spec = do
               , rawPlanItemPkgName = Just (PackageName "mypkg")
               , rawPlanItemPkgVersion = Just (Version "0.1.0.0")
               , rawPlanItemDepends = [UnitId "aeson-2.2.4.1", UnitId "text-2.0.2"]
+              , rawPlanItemComponents = []
               , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
               }
 
@@ -159,6 +218,7 @@ spec = do
               , rawPlanItemPkgName = Just (PackageName "aeson")
               , rawPlanItemPkgVersion = Just (Version "2.2.4.1")
               , rawPlanItemDepends = [UnitId "bytestring-0.11.5.3", UnitId "text-2.0.2"]
+              , rawPlanItemComponents = []
               , rawPlanItemPkgSrc = Nothing
               }
 
@@ -169,6 +229,7 @@ spec = do
               , rawPlanItemPkgName = Just (PackageName "text")
               , rawPlanItemPkgVersion = Just (Version "2.0.2")
               , rawPlanItemDepends = [UnitId "bytestring-0.11.5.3"]
+              , rawPlanItemComponents = []
               , rawPlanItemPkgSrc = Nothing
               }
 
@@ -179,6 +240,7 @@ spec = do
               , rawPlanItemPkgName = Just (PackageName "bytestring")
               , rawPlanItemPkgVersion = Just (Version "0.11.5.3")
               , rawPlanItemDepends = []
+              , rawPlanItemComponents = []
               , rawPlanItemPkgSrc = Nothing
               }
 

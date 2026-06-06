@@ -13,6 +13,8 @@ module Hgs.Domain
   , PackageSource(..)
   , Package(..)
   , PlanGraph(..)
+  , ComponentName(..)
+  , RawComponent(..)
   ) where
 
 import Data.Aeson
@@ -23,8 +25,10 @@ import Data.Aeson
   , (.!=)
   )
 import Data.Aeson.Types (Parser)
+import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 
+import Data.Foldable (toList)
 import Data.Map.Strict (Map)
 import Data.Set (Set)
 import Data.Text (Text)
@@ -57,6 +61,7 @@ data RawPlanItem = RawPlanItem
   , rawPlanItemPkgName    :: Maybe PackageName
   , rawPlanItemPkgVersion :: Maybe Version
   , rawPlanItemDepends    :: [UnitId]
+  , rawPlanItemComponents :: [RawComponent]
   , rawPlanItemPkgSrc     :: Maybe RawPkgSrc
   }
   deriving stock (Eq, Show)
@@ -98,25 +103,58 @@ instance FromJSON RawPkgSrc where
 
 instance FromJSON RawPlanItem where
   parseJSON = withObject "RawPlanItem" $ \o -> do
-    topDepends       <- fmap UnitId <$> (o .:? "depends" .!= [])
-    componentDepends <- parseComponentDepends =<< o .:? "components"
+    topDepends <-
+      parseDependsField =<< o .:? "depends"
+    components <-
+      parseComponents =<< o .:? "components"
+    let componentDepends =
+          concatMap rawComponentDepends components
     RawPlanItem
       <$> o .:? "type"
       <*> (fmap UnitId <$> o .:? "id")
       <*> (fmap PackageName <$> o .:? "pkg-name")
       <*> (fmap Version <$> o .:? "pkg-version")
       <*> pure (topDepends <> componentDepends)
+      <*> pure components
       <*> o .:? "pkg-src"
 
-parseComponentDepends :: Maybe Value -> Parser [UnitId]
-parseComponentDepends = \case
+parseDependsField :: Maybe Value -> Parser [UnitId]
+parseDependsField = \case
     Nothing -> pure []
     Just Null -> pure []
-    Just (Object components) ->
-      concat <$> traverse parseComponent (KeyMap.elems components)
-    Just _ -> pure []
+    Just (Array xs) -> traverse parseUnitIdValue (toList xs)
+    Just _ -> fail "depends: expected array, null, or missing"
 
-parseComponent :: Value -> Parser [UnitId]
-parseComponent = \case
-  Object component -> fmap UnitId <$> (component .:? "depends" .!= [])
-  _ -> pure []
+parseComponents :: Maybe Value -> Parser [RawComponent]
+parseComponents = \case
+    Nothing -> pure []
+    Just Null -> pure []
+    Just (Object components) -> traverse parseComponent (KeyMap.toList components)
+    Just _ -> fail "components: expected object, null, or missing"
+
+parseComponent :: (Key.Key, Value) -> Parser RawComponent
+parseComponent (name, value) =
+  case value of
+    Object component -> do
+      depends <-
+        parseDependsField =<< component .:? "depends"
+      pure
+        RawComponent
+          { rawComponentName = ComponentName (Key.toText name)
+          , rawComponentDepends = depends
+          }
+    _ -> fail "component: expected object"
+
+parseUnitIdValue :: Value -> Parser UnitId
+parseUnitIdValue = \case
+    String t -> pure (UnitId t)
+    _ -> fail "dependency id: expected string"
+
+newtype ComponentName = ComponentName { unComponentName :: Text }
+  deriving stock (Eq, Ord, Show)
+
+data RawComponent = RawComponent
+  { rawComponentName    :: ComponentName
+  , rawComponentDepends :: [UnitId]
+  }
+  deriving stock (Eq, Show)
