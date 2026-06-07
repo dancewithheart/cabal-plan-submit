@@ -9,6 +9,7 @@ import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Char8 qualified as BS8
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
@@ -34,6 +35,12 @@ import System.Directory
 import System.FilePath
   ( takeDirectory
   )
+import Hgs.Snapshot
+  ( snapshotFromPlanGraph
+  )
+import TestSupport
+  ( snapshotInput
+  )
 import Test.Hspec
 
 spec :: Spec
@@ -48,6 +55,16 @@ spec = do
       "enrich-sarif adds dependency path projection for persistent cabal-audit SARIF"
       "test/golden/persistent/enrich-sarif-projection.golden"
       (renderEnrichedSarifProjection "test/golden/persistent/plan.json" "test/golden/persistent/sarif.json")
+
+    golden
+      "enrich-sarif renders full enriched persistent SARIF"
+      "test/golden/persistent/sarif_enriched.json"
+      (renderEnrichedSarif "test/golden/persistent/plan.json" "test/golden/persistent/sarif.json")
+
+    golden
+      "render-snapshot renders GitHub dependency snapshot"
+      "test/golden/cabal_plan_json/snapshot.json"
+      (renderSnapshot "test/golden/cabal_plan_json/plan.json")
 
 golden :: String -> FilePath -> IO ByteString -> Spec
 golden name expectedPath action =
@@ -102,6 +119,36 @@ renderEnrichedSarifProjection planPath sarifPath = do
           sarif
 
   pure (BS8.pack (renderSarifProjection enriched))
+
+renderEnrichedSarif :: FilePath -> FilePath -> IO ByteString
+renderEnrichedSarif planPath sarifPath = do
+  plan <- decodePlanFileOrFail planPath
+  sarif <- decodeJsonFileOrFail sarifPath
+
+  let enriched =
+        enrichSarifValue
+          Map.empty
+          AllLocalUnits
+          (extractPlanGraph plan)
+          sarif
+
+  pure (encodeJsonStrict enriched)
+
+renderSnapshot :: FilePath -> IO ByteString
+renderSnapshot planPath = do
+  plan <- decodePlanFileOrFail planPath
+
+  let graph =
+        extractPlanGraph plan
+
+      snapshot =
+        snapshotFromPlanGraph snapshotInput graph
+
+  pure (encodeJsonStrict snapshot)
+
+encodeJsonStrict :: Aeson.ToJSON a => a -> ByteString
+encodeJsonStrict value =
+  LBS.toStrict (Aeson.encode value) <> "\n"
 
 decodePlanFileOrFail :: FilePath -> IO RawPlan
 decodePlanFileOrFail path = do
