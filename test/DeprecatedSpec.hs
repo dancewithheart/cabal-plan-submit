@@ -109,6 +109,7 @@ spec = do
                         , rawPlanItemPkgName = Just (PackageName "unix-time")
                         , rawPlanItemPkgVersion = Just (Version "0.4.17")
                         , rawPlanItemDepends = [UnitId "old-time-1.1.1.0-oldtimehash"]
+                        , rawPlanItemComponents = []
                         , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
                         }
                     , RawPlanItem
@@ -117,6 +118,7 @@ spec = do
                         , rawPlanItemPkgName = Just (PackageName "old-time")
                         , rawPlanItemPkgVersion = Just (Version "1.1.1.0")
                         , rawPlanItemDepends = []
+                        , rawPlanItemComponents = []
                         , rawPlanItemPkgSrc = Nothing
                         }
                     ]

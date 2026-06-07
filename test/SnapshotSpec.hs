@@ -146,6 +146,7 @@ mkLocal unitId deps =
     , rawPlanItemPkgName = Just (PackageName "root")
     , rawPlanItemPkgVersion = Just (Version "0.1.0.0")
     , rawPlanItemDepends = deps
+    , rawPlanItemComponents = []
     , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
     }
 
@@ -161,6 +162,7 @@ mkExternalWith unitId name version deps =
     , rawPlanItemPkgName = Just (PackageName name)
     , rawPlanItemPkgVersion = Just (Version version)
     , rawPlanItemDepends = deps
+    , rawPlanItemComponents = []
     , rawPlanItemPkgSrc = Nothing
     }
 

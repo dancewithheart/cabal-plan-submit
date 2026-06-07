@@ -14,7 +14,6 @@ import Data.Aeson.KeyMap (KeyMap)
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Foldable (asum)
 import Data.Set qualified as Set
-import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Map.Strict (Map)
 import Data.Maybe (fromMaybe, maybeToList)
@@ -25,7 +24,6 @@ import System.FilePath
   , normalise
   , takeExtension
   )
-import Data.Ord (Down(..))
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Vector qualified as Vector
@@ -52,6 +50,12 @@ data FindingExplanation = FindingExplanation
   , explainedRelationship :: Text
   , explainedPaths        :: [PackagePath]
   }
+  deriving stock (Eq, Show)
+
+data PackageMatch
+  = NoPackageMention
+  | MatchedPackage Package
+  | AmbiguousPackageMention PackageName [Package]
   deriving stock (Eq, Show)
 
 enrichSarifValue :: CabalLineIndex -> LocalUnitFilter -> PlanGraph -> Value -> Value
@@ -91,66 +95,70 @@ enrichResult lineIndex repoRoot localFilter graph result =
       result
 
 explainResult :: LocalUnitFilter -> PlanGraph -> Value -> Maybe FindingExplanation
-explainResult localFilter graph result = do
-  pkg <- findMentionedPackage graph result
-  let paths =
-        [ path
-        | path <- shortestPathsToPackageFrom localFilter (packageName pkg) graph
-        , pathEndsAt pkg path
-        ]
-  case paths of
-    [] ->
-      Nothing
+explainResult localFilter graph result =
+  case findMentionedPackage graph result of
+    NoPackageMention -> Nothing
+    AmbiguousPackageMention _ _ -> Nothing
+    MatchedPackage pkg ->
+      let paths =
+            [ path
+            | path <- shortestPathsToPackageFrom localFilter (packageName pkg) graph
+            , pathEndsAt pkg path
+            ]
+       in case paths of
+            [] ->
+              Nothing
 
-    _ ->
-      Just
-        FindingExplanation
-          { explainedPackage = pkg
-          , explainedRelationship = relationshipFromPaths paths
-          , explainedPaths = paths
-          }
+            _ ->
+              Just
+                FindingExplanation
+                  { explainedPackage = pkg
+                  , explainedRelationship = relationshipFromPaths paths
+                  , explainedPaths = paths
+                  }
 
-findMentionedPackage :: PlanGraph -> Value -> Maybe Package
+findMentionedPackage :: PlanGraph -> Value -> PackageMatch
 findMentionedPackage graph result =
-  asum
-    [ packageFromConcernedNames
-    , exactVersionMatch
-    ]
+  case exactMatches of
+    pkg : _ -> MatchedPackage pkg
+    []      -> matchMentionedNames mentionedNames
  where
   haystack =
     Text.unwords (collectStrings result)
 
-  concernedNames =
+  mentionedNames =
     extractConcernedPackageNames haystack
 
   candidatePackages =
-    sortOn
-      (Down . Text.length . unPackageName . packageName)
-      [ pkg
-      | pkg <- Map.elems (planGraphPackages graph)
-      , packageSource pkg == PackageExternal
-      ]
+    [ pkg
+    | pkg <- Map.elems (planGraphPackages graph)
+    , packageSource pkg == PackageExternal
+    ]
 
-  packageFromConcernedNames =
-    asum
-      [ Just pkg
-      | name <- concernedNames
-      , pkg <- candidatePackages
-      , unPackageName (packageName pkg) == name
-      ]
+  exactMatches =
+    [ pkg
+    | pkg <- candidatePackages
+    , packageName pkg `elem` mentionedNames
+    , unVersion (packageVersion pkg) `Text.isInfixOf` haystack
+    ]
 
-  exactVersionMatch =
-    asum
-      [ Just pkg
-      | pkg <- candidatePackages
-      , exactPackageNameMentioned pkg haystack
-      , unVersion (packageVersion pkg) `Text.isInfixOf` haystack
-      ]
+  matchMentionedNames names =
+    case concatMap packagesWithName names of
+      [] -> NoPackageMention
+      [pkg] -> MatchedPackage pkg
+      pkgs@(pkg : _) -> AmbiguousPackageMention (packageName pkg) pkgs
 
-extractConcernedPackageNames :: Text -> [Text]
+  packagesWithName name =
+    [ pkg
+    | pkg <- candidatePackages
+    , packageName pkg == name
+    ]
+
+extractConcernedPackageNames :: Text -> [PackageName]
 extractConcernedPackageNames haystack =
-  dedupeText $
-    concatMap namesFromParenthesizedLine (Text.lines haystack)
+  map PackageName $
+    dedupeText $
+      concatMap namesFromParenthesizedLine (Text.lines haystack)
 
 namesFromParenthesizedLine :: Text -> [Text]
 namesFromParenthesizedLine line =
@@ -167,10 +175,6 @@ namesFromParenthesizedLine line =
                   Text.splitOn "," inside
           | otherwise ->
               []
-
-exactPackageNameMentioned :: Package -> Text -> Bool
-exactPackageNameMentioned pkg haystack =
-  unPackageName (packageName pkg) `elem` extractConcernedPackageNames haystack
 
 plausiblePackageName :: Text -> Bool
 plausiblePackageName name =

@@ -71,13 +71,15 @@ test-suite plan-json-test
       Hgs.Input.PlanJson
       Hgs.Locals
       Hgs.LocalUnitFilter
+      Hgs.Sarif.Enrich
       Hgs.Snapshot
       Hgs.Validate
       Hgs.Why
       DeprecatedSpec
+      LocalsSpec
       PlanJsonSpec
       SnapshotSpec
-      LocalsSpec
+      SarifEnrichSpec
       TestSupport
   default-language: GHC2021
   ghc-options:
@@ -96,6 +98,7 @@ test-suite plan-json-test
     , bytestring
     , containers
     , hspec
+    , filepath
     , QuickCheck
     , text
     , time
