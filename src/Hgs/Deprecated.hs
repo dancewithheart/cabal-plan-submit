@@ -35,11 +35,11 @@ import Hgs.Domain
   , PlanGraph(..)
   , Version(..)
   )
-import Hgs.Why
+import Hgs.Paths
   ( PackagePath(..)
   , renderPackagePath
-  , shortestPathsToPackageFrom
   )
+import Hgs.Why (shortestPathsToPackageFrom)
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter(..)
   )

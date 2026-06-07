@@ -37,11 +37,11 @@ import Hgs.Domain
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter
   )
-import Hgs.Why
+import Hgs.Paths
   ( PackagePath(..)
   , renderPackagePath
-  , shortestPathsToPackageFrom
   )
+import Hgs.Why (shortestPathsToPackageFrom)
 
 type CabalLineIndex = Map (FilePath, PackageName) Int
 

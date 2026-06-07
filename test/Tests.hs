@@ -5,6 +5,7 @@ import DeprecatedSpec qualified
 import PlanJsonSpec qualified
 import SnapshotSpec qualified
 import LocalsSpec qualified
+import PathTrieSpec qualified
 import SarifEnrichSpec qualified
 import GoldenSpec qualified
 
@@ -15,5 +16,6 @@ main =
     SnapshotSpec.spec
     DeprecatedSpec.spec
     LocalsSpec.spec
+    PathTrieSpec.spec
     SarifEnrichSpec.spec
     GoldenSpec.spec

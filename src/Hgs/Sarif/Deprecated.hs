@@ -30,7 +30,7 @@ import Hgs.Domain
 import Hgs.Sarif.Enrich
   ( CabalLineIndex
   )
-import Hgs.Why
+import Hgs.Paths
   ( PackagePath(..)
   , renderPackagePath
   )

@@ -33,6 +33,8 @@ executable cabal-plan-submit
     Hgs.Extract
     Hgs.Locals
     Hgs.LocalUnitFilter
+    Hgs.Paths
+    Hgs.PathTrie
     Hgs.Snapshot
     Hgs.Validate
     Hgs.Input.PlanJson
@@ -71,6 +73,8 @@ test-suite plan-json-test
       Hgs.Input.PlanJson
       Hgs.Locals
       Hgs.LocalUnitFilter
+      Hgs.Paths
+      Hgs.PathTrie
       Hgs.Sarif.Enrich
       Hgs.Snapshot
       Hgs.Validate
@@ -78,6 +82,7 @@ test-suite plan-json-test
       GoldenSpec
       DeprecatedSpec
       LocalsSpec
+      PathTrieSpec
       PlanJsonSpec
       SnapshotSpec
       SarifEnrichSpec
