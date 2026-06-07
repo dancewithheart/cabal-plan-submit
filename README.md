@@ -36,7 +36,7 @@ You can export SBOM (Software Bill of Materials) file on `Dependency graph` tab.
 Fail CI on deprecated dependencies:
 
 ```sh
-cabal-plan-submit inspect-deprecated --fail-on direct dist-newstyle/cache/plan.json deprecated.yaml
+cabal-plan-submit inspect-deprecated dist-newstyle/cache/plan.json deprecated.yaml
 ```
 
 ## Usage
@@ -95,8 +95,9 @@ cabal run cabal-plan-submit -- inspect-deprecated "$PROJECT_PATH/dist-newstyle/c
 
 ## Working with code
 
-Running tests:
+Running tests (first command generate golden tests):
 
 ```sh
+UPDATE_GOLDEN=1 cabal test
 cabal test
 ```

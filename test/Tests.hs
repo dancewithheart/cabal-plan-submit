@@ -6,6 +6,7 @@ import PlanJsonSpec qualified
 import SnapshotSpec qualified
 import LocalsSpec qualified
 import SarifEnrichSpec qualified
+import GoldenSpec qualified
 
 main :: IO ()
 main =
@@ -15,3 +16,4 @@ main =
     DeprecatedSpec.spec
     LocalsSpec.spec
     SarifEnrichSpec.spec
+    GoldenSpec.spec
