@@ -88,7 +88,7 @@ test-suite plan-json-test
     test/golden/unix-time/inspect-deprecated-production.golden
     test/golden/persistent/plan.json
     test/golden/persistent/sarif.json
-    test/golden/persistent/enrich-sarif.golden
+    test/golden/persistent/enrich-sarif-projection.golden
     test/golden/persistent/sarif_enriched.json
     test/golden/cabal_plan_json/plan.json
     test/golden/cabal_plan_json/snapshot.json
