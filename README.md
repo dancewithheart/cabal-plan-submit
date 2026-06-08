@@ -121,6 +121,12 @@ UPDATE_GOLDEN=1 cabal test
 cabal test
 ```
 
+Run hlint analysis:
+
+```sh
+hlint src app test
+```
+
 ## Blog posts
 
 [Blog post](https://dancewithheart.github.io/posts/2026-05-31-cabal-plan-submit.html) explaining example use cases.
