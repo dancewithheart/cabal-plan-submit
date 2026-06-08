@@ -89,3 +89,4 @@
 * Add alias deprecated to inspect-deprecated.
 * Add zizmor for CI. ([#33](https://github.com/dancewithheart/cabal-plan-submit/pull/33))
 * Add golden tests. ([#37](https://github.com/dancewithheart/cabal-plan-submit/pull/37))
+* Add hlint to CI. ([#41](https://github.com/dancewithheart/cabal-plan-submit/pull/41))
