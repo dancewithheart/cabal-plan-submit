@@ -1,0 +1,29 @@
+HSEC-2023-0007
+  level: error
+  package: base-4.21.0.0
+  relationship: direct
+  paths:
+    - persistent-2.18.1.0 -> base-4.21.0.0
+    - persistent-mongoDB-2.13.1.0 -> base-4.21.0.0
+    - persistent-mysql-2.13.1.6 -> base-4.21.0.0
+    - persistent-postgresql-2.14.3.0 -> base-4.21.0.0
+    - persistent-qq-2.12.0.7 -> base-4.21.0.0
+    - persistent-redis-2.13.0.2 -> base-4.21.0.0
+    - persistent-sqlite-2.13.3.1 -> base-4.21.0.0
+    - persistent-test-2.13.2.1 -> base-4.21.0.0
+
+HSEC-2025-0002
+  level: note
+  package: cryptonite-0.30
+  relationship: indirect
+  paths:
+    - persistent-mongoDB-2.13.1.0 -> mongoDB-2.7.1.4 -> cryptohash-0.11.9 -> cryptonite-0.30
+
+HSEC-2026-0006
+  level: note
+  package: Cabal-3.14.1.0
+  relationship: indirect
+  paths:
+    - persistent-mongoDB-2.13.1.0 -> mongoDB-2.7.1.4 -> nonce-1.0.7 -> entropy-0.4.1.11 -> Cabal-3.14.1.0
+    - persistent-mysql-2.13.1.6 -> mysql-0.2.1 -> Cabal-3.14.1.0
+

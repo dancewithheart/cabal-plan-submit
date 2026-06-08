@@ -1,0 +1,5 @@
+deprecated packages:
+  old-time-1.1.1.0
+    relationship: direct
+    replacement: time
+    used by path: unix-time-0.4.17 -> old-time-1.1.1.0

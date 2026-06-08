@@ -1,0 +1,217 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "artifacts": [
+        {
+          "location": {
+            "uri": "file:////home/piter/persistent"
+          }
+        }
+      ],
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:////home/piter/persistent"
+                },
+                "region": {
+                  "endColumn": 2,
+                  "endLine": 2,
+                  "startColumn": 1,
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "message": {
+            "markdown": "# HSEC-2023-0007 \"readFloat: memory exhaustion with large exponent\"\n\npublished: 2025-11-14 14:45:34 UTC\n\nhttps://haskell.github.io/security-advisories/advisory/HSEC-2023-0007\n\nConcerned package:\n* base: No fix version available\n\ntoml, parser, dos\n\n",
+            "text": "HSEC-2023-0007 \"readFloat: memory exhaustion with large exponent\"\n(base)\npublished: 2025-11-14 14:45:34 UTC\nhttps://haskell.github.io/security-advisories/advisory/HSEC-2023-0007\ntoml, parser, dos\n"
+          },
+          "ruleId": "HSEC-2023-0007"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:////home/piter/persistent"
+                },
+                "region": {
+                  "endColumn": 2,
+                  "endLine": 2,
+                  "startColumn": 1,
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "message": {
+            "markdown": "# HSEC-2025-0002 \"Double Public Key Signing Function Oracle Attack on Ed25519\"\n\npublished: 2025-11-14 14:45:34 UTC\n\nhttps://haskell.github.io/security-advisories/advisory/HSEC-2025-0002\n\nConcerned package:\n* cryptonite: No fix version available\n\ncrypto\n\n",
+            "text": "HSEC-2025-0002 \"Double Public Key Signing Function Oracle Attack on Ed25519\"\n(cryptonite)\npublished: 2025-11-14 14:45:34 UTC\nhttps://haskell.github.io/security-advisories/advisory/HSEC-2025-0002\ncrypto\n"
+          },
+          "ruleId": "HSEC-2025-0002"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:////home/piter/persistent"
+                },
+                "region": {
+                  "endColumn": 2,
+                  "endLine": 2,
+                  "startColumn": 1,
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "message": {
+            "markdown": "# HSEC-2026-0006 \"Cabal deletes project source files during configure\"\n\npublished: 2026-04-08 14:23:27 UTC\n\nhttps://haskell.github.io/security-advisories/advisory/HSEC-2026-0006\n\nConcerned package:\n* Cabal: No fix version available\n\ncabal, file-deletion, configure\n\n",
+            "text": "HSEC-2026-0006 \"Cabal deletes project source files during configure\"\n(Cabal)\npublished: 2026-04-08 14:23:27 UTC\nhttps://haskell.github.io/security-advisories/advisory/HSEC-2026-0006\ncabal, file-deletion, configure\n"
+          },
+          "ruleId": "HSEC-2026-0006"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "file:////home/piter/persistent"
+                },
+                "region": {
+                  "endColumn": 2,
+                  "endLine": 2,
+                  "startColumn": 1,
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "message": {
+            "markdown": "# HSEC-2026-0007 \"Denial of Service and Memory Exhaustion in aeson and text-iso8601\"\n\npublished: 2026-05-22 07:02:58 UTC\n\nhttps://haskell.github.io/security-advisories/advisory/HSEC-2026-0007\n\nConcerned package:\n* text-iso8601: Fix available since version 0.2.0.0\n* aeson: Fix available since version 2.3.0.0\n\naeson, text-iso8601, dos, memory-exhaustion, json\n\n",
+            "text": "HSEC-2026-0007 \"Denial of Service and Memory Exhaustion in aeson and text-iso8601\"\n(text-iso8601, aeson)\npublished: 2026-05-22 07:02:58 UTC\nhttps://haskell.github.io/security-advisories/advisory/HSEC-2026-0007\naeson, text-iso8601, dos, memory-exhaustion, json\n"
+          },
+          "ruleId": "HSEC-2026-0007"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "name": "cabal-audit",
+          "rules": [
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Haskell Security Advisory: readFloat: memory exhaustion with large exponent. Keywords: toml, parser, dos"
+              },
+              "helpUri": "https://haskell.github.io/security-advisories/advisory/HSEC-2023-0007",
+              "id": "HSEC-2023-0007",
+              "name": "HSEC-2023-0007",
+              "properties": {
+                "security-severity": "7.5",
+                "tags": [
+                  "security",
+                  "external/hsec/HSEC-2023-0007",
+                  "external/cwe/cwe-1284",
+                  "external/cwe/cwe-789"
+                ]
+              },
+              "shortDescription": {
+                "text": "readFloat: memory exhaustion with large exponent"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Haskell Security Advisory: Double Public Key Signing Function Oracle Attack on Ed25519. Keywords: crypto"
+              },
+              "helpUri": "https://haskell.github.io/security-advisories/advisory/HSEC-2025-0002",
+              "id": "HSEC-2025-0002",
+              "name": "HSEC-2025-0002",
+              "properties": {
+                "security-severity": "7.7",
+                "tags": [
+                  "security",
+                  "external/hsec/HSEC-2025-0002"
+                ]
+              },
+              "shortDescription": {
+                "text": "Double Public Key Signing Function Oracle Attack on Ed25519"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Haskell Security Advisory: Cabal deletes project source files during configure. Keywords: cabal, file-deletion, configure"
+              },
+              "helpUri": "https://haskell.github.io/security-advisories/advisory/HSEC-2026-0006",
+              "id": "HSEC-2026-0006",
+              "name": "HSEC-2026-0006",
+              "properties": {
+                "security-severity": "5.5",
+                "tags": [
+                  "security",
+                  "external/hsec/HSEC-2026-0006",
+                  "external/cwe/cwe-73"
+                ]
+              },
+              "shortDescription": {
+                "text": "Cabal deletes project source files during configure"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Haskell Security Advisory: Denial of Service and Memory Exhaustion in aeson and text-iso8601. Keywords: aeson, text-iso8601, dos, memory-exhaustion, json"
+              },
+              "helpUri": "https://haskell.github.io/security-advisories/advisory/HSEC-2026-0007",
+              "id": "HSEC-2026-0007",
+              "name": "HSEC-2026-0007",
+              "properties": {
+                "security-severity": "7.5",
+                "tags": [
+                  "security",
+                  "external/hsec/HSEC-2026-0007",
+                  "external/cwe/cwe-400"
+                ]
+              },
+              "shortDescription": {
+                "text": "Denial of Service and Memory Exhaustion in aeson and text-iso8601"
+              }
+            }
+          ],
+          "version": "1.0.0.0"
+        },
+        "extensions": [
+          {
+            "name": "hsec-tools",
+            "rules": [],
+            "version": "0.3.0.1"
+          },
+          {
+            "name": "ghc",
+            "rules": [],
+            "version": "9.10.3"
+          }
+        ]
+      }
+    }
+  ],
+  "version": "2.1.0"
+}
