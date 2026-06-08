@@ -8,7 +8,7 @@ module Hgs.PathTrie
   ) where
 
 import Data.Maybe (maybeToList)
-import Data.List (foldl', intercalate)
+import Data.List (foldl')
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text

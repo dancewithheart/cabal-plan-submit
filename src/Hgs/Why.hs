@@ -12,7 +12,6 @@ module Hgs.Why
   , renderWhyTrieFrom
   ) where
 
-import Data.List (intercalate)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Sequence (Seq((:<|)), (|>))
@@ -25,7 +24,6 @@ import Hgs.Domain
   , PackageSource(..)
   , PlanGraph(..)
   , UnitId
-  , Version(..)
   )
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter(..)
@@ -133,12 +131,6 @@ renderWhyTrieFrom filterKind target graph =
       Text.unpack (unPackageName target)
         <> "\ndependency tree:\n"
         <> renderPathTrie trie
-
-renderPackage :: Package -> String
-renderPackage pkg =
-  Text.unpack (unPackageName (packageName pkg))
-    <> "-"
-    <> Text.unpack (unVersion (packageVersion pkg))
 
 maybeToList :: Maybe a -> [a]
 maybeToList =
