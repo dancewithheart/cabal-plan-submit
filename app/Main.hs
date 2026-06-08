@@ -22,6 +22,7 @@ import Data.Version (showVersion)
 import Paths_cabal_plan_submit qualified as Paths
 import System.Directory (doesFileExist, listDirectory)
 import System.Environment (getArgs)
+import System.Exit (ExitCode(..), die, exitFailure, exitWith)
 import System.FilePath
   ( (</>)
   , dropTrailingPathSeparator
@@ -31,7 +32,6 @@ import System.FilePath
   , takeExtension
   , splitDirectories
   )
-import System.Exit (die, exitFailure)
 import System.IO (hPutStrLn, stderr)
 
 import Hgs.Deprecated
@@ -79,7 +79,12 @@ import Hgs.Sarif.Enrich
 
 main :: IO ()
 main = do
-  args <- getArgs
+  rawArgs <- getArgs
+  let args = normalizeExternalCommandArgs rawArgs
+  runWithArgs rawArgs args
+
+runWithArgs :: [String] -> [String] -> IO ()
+runWithArgs rawArgs args =
   case args of
     ["--help"] ->
       putStr usage
@@ -87,41 +92,86 @@ main = do
       putStr usage
     ["--version"] ->
       putStrLn ("cabal-plan-submit " <> showVersion Paths.version)
+    ["inspect-plan"] ->
+      inspectPlan defaultPlanJsonPath
     ["inspect-plan", path] ->
       inspectPlan path
+    ["inspect-graph"] ->
+      inspectGraph defaultPlanJsonPath
     ["inspect-graph", path] ->
       inspectGraph path
+    ["inspect-locals"] ->
+      inspectLocalPackages defaultPlanJsonPath
+    ["inspect-locals", path] ->
+      inspectLocalPackages path
     ["render-snapshot", path, sha, ref] ->
       renderSnapshot path sha ref
     ["validate-snapshot", path] ->
       validateSnapshot path
+    -- TODO pp drop this in favour of deprecated, but I have working GH workflows using this so not now
     "inspect-deprecated" : rest ->
+      case parseInspectDeprecatedOptions rest of
+        Left err   -> dieWithArgs rawArgs err
+        Right opts -> inspectDeprecated opts
+    "deprecated" : rest ->
       case parseInspectDeprecatedOptions rest of
         Left err   -> die err
         Right opts -> inspectDeprecated opts
+    ["why", "--production-only", packageName] ->
+      whyPackage ProductionLocalUnits defaultPlanJsonPath packageName
+    ["why", packageName] ->
+      whyPackage AllLocalUnits defaultPlanJsonPath packageName
     ["why", "--production-only", path, packageName] ->
       whyPackage ProductionLocalUnits path packageName
     ["why", path, packageName] ->
       whyPackage AllLocalUnits path packageName
-    ["inspect-locals", path] ->
-      inspectLocalPackages path
+    ["enrich-sarif", sarifPath] ->
+      enrichSarif AllLocalUnits defaultPlanJsonPath sarifPath
     ["enrich-sarif", planPath, sarifPath] ->
       enrichSarif AllLocalUnits planPath sarifPath
+    ["enrich-sarif", "--production-only", sarifPath] ->
+      enrichSarif ProductionLocalUnits defaultPlanJsonPath sarifPath
     ["enrich-sarif", "--production-only", planPath, sarifPath] ->
       enrichSarif ProductionLocalUnits planPath sarifPath
     "deprecated-sarif" : rest ->
       case parseDeprecatedSarifOptions rest of
         Left err ->
-          die err
+          dieWithArgs rawArgs err
         Right opts ->
           deprecatedSarif
             (deprecatedSarifLocalFilter opts)
             (deprecatedSarifIgnoredPackages opts)
             (deprecatedSarifPlanPath opts)
             (deprecatedSarifMetadataPath opts)
-    _ ->
-      die usage
+    _ -> dieWithArgs rawArgs usage
 
+defaultPlanJsonPath :: FilePath
+defaultPlanJsonPath = "dist-newstyle/cache/plan.json"
+
+defaultDeprecatedYamlPath :: FilePath
+defaultDeprecatedYamlPath = "deprecated.yaml"
+
+-- cabal-install 3.14 passes the external command name as argv[1]:
+--   cabal plan-submit why aeson
+-- becomes:
+--   cabal-plan-submit plan-submit why aeson
+normalizeExternalCommandArgs :: [String] -> [String]
+normalizeExternalCommandArgs =
+  \case
+    "plan-submit" : rest -> rest
+    args -> args
+
+dieWithArgs :: [String] -> String -> IO a
+dieWithArgs rawArgs msg =
+  die $
+    unlines
+      [ "Invalid command or arguments."
+      , ""
+      , "Received arguments:"
+      , "  " <> show rawArgs
+      , ""
+      , msg
+      ]
 
 data InspectDeprecatedOptions = InspectDeprecatedOptions
   { inspectDeprecatedLocalFilter     :: LocalUnitFilter
@@ -168,6 +218,18 @@ parseInspectDeprecatedOptions =
             }
           rest
 
+      [] ->
+        Right
+          opts
+            { inspectDeprecatedPlanPath = defaultPlanJsonPath
+            , inspectDeprecatedMetadataPath = defaultDeprecatedYamlPath
+            }
+      [metadataPath] ->
+        Right
+          opts
+            { inspectDeprecatedPlanPath = defaultPlanJsonPath
+            , inspectDeprecatedMetadataPath = metadataPath
+            }
       [planPath, metadataPath] ->
         Right
           opts
@@ -574,14 +636,13 @@ usage =
     [ "Usage:"
     , "  cabal-plan-submit --help"
     , "  cabal-plan-submit --version"
-    , "  cabal-plan-submit inspect-plan PATH_TO_PLAN_JSON"
-    , "  cabal-plan-submit inspect-graph PATH_TO_PLAN_JSON"
-    , "  cabal-plan-submit inspect-locals PATH_TO_PLAN_JSON"
+    , "  cabal-plan-submit inspect-plan [PATH_TO_PLAN_JSON]"
+    , "  cabal-plan-submit inspect-graph [PATH_TO_PLAN_JSON]"
+    , "  cabal-plan-submit inspect-locals [PATH_TO_PLAN_JSON]"
     , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
     , "  cabal-plan-submit validate-snapshot PATH_TO_SNAPSHOT_JSON"
     , "  cabal-plan-submit inspect-deprecated [--production-only] [--fail-on none|direct|any] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
-    , "  cabal-plan-submit why PATH_TO_PLAN_JSON PACKAGE_NAME"
-    , "  cabal-plan-submit why --production-only PATH_TO_PLAN_JSON PACKAGE_NAME"
+    , "  cabal-plan-submit why [--production-only] [PATH_TO_PLAN_JSON] PACKAGE_NAME"
     , "  cabal-plan-submit enrich-sarif PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
     , "  cabal-plan-submit enrich-sarif --production-only PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
     , "  cabal-plan-submit deprecated-sarif [--production-only] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
