@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Setup Haskell
-        uses: haskell-actions/setup@fe9cd1cd1af94a23900c06738e73f6ddb092966a # v2.4
+        uses: haskell-actions/setup@cd0d9bdd65b20557f41bea4dbe43d0b5fbbfe553 # v2.11
         with:
           ghc-version: "9.6.7"
           cabal-version: "3.14"
