@@ -12,6 +12,7 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap (KeyMap)
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
 import Data.Foldable (asum)
 import Data.Set qualified as Set
 import Data.Map.Strict qualified as Map
@@ -183,9 +184,9 @@ plausiblePackageName name =
     && Text.all validChar name
  where
   validChar c =
-    ('a' <= c && c <= 'z')
-      || ('A' <= c && c <= 'Z')
-      || ('0' <= c && c <= '9')
+    isAsciiLower c
+      || isAsciiUpper c
+      || isDigit c
       || c == '-'
       || c == '_'
 

@@ -22,7 +22,7 @@ import Data.Version (showVersion)
 import Paths_cabal_plan_submit qualified as Paths
 import System.Directory (doesFileExist, listDirectory)
 import System.Environment (getArgs)
-import System.Exit (ExitCode(..), die, exitFailure, exitWith)
+import System.Exit (die, exitFailure)
 import System.FilePath
   ( (</>)
   , dropTrailingPathSeparator
@@ -437,7 +437,7 @@ readSarifFileOrDie sarifPath = do
 
 buildCabalLineIndex :: FilePath -> PlanGraph -> IO CabalLineIndex
 buildCabalLineIndex repoRoot graph =
-  fmap Map.unions $
+  Map.unions <$>
     traverse (cabalLineIndexForLocalPackage repoRoot) localPackages
  where
   localPackages =
