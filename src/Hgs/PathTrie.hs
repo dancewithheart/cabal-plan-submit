@@ -11,17 +11,15 @@ import Data.Maybe (maybeToList)
 import Data.List (foldl')
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text qualified as Text
 import Hgs.Domain
   ( Package(..)
-  , PackageName(..)
-  , Version(..)
   )
 import Hgs.Paths
   ( PackageKey
   , PackagePath(..)
   , packageKey
   )
+import Hgs.PrettyPrint (renderPackage)
 
 data PathTrie = PathTrie
   { triePackage  :: Package
@@ -136,9 +134,3 @@ markLast =
 
     x : xs ->
       (False, x) : markLast xs
-
-renderPackage :: Package -> String
-renderPackage pkg =
-  Text.unpack (unPackageName (packageName pkg))
-    <> "-"
-    <> Text.unpack (unVersion (packageVersion pkg))

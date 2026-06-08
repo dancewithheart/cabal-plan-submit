@@ -12,12 +12,11 @@ import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Hgs.Domain
   ( Package(..)
-  , PackageName(..)
   , PackageSource(..)
   , PlanGraph(..)
   , UnitId(..)
-  , Version(..)
   )
+import Hgs.PrettyPrint (renderPackage)
 
 data LocalPackage = LocalPackage
   { localPackage       :: Package
@@ -77,11 +76,7 @@ renderDeps deps =
     _ ->
       map (("      " <>) . renderPackage) deps
 
-renderPackage :: Package -> String
-renderPackage pkg =
-  Text.unpack (unPackageName (packageName pkg))
-    <> "-"
-    <> Text.unpack (unVersion (packageVersion pkg))
+
 
 maybeToList :: Maybe a -> [a]
 maybeToList =

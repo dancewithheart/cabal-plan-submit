@@ -12,12 +12,12 @@ module Hgs.Paths
   ) where
 
 import Data.List (intercalate)
-import Data.Text qualified as Text
 import Hgs.Domain
   ( Package(..)
   , PackageName(..)
   , Version(..)
   )
+import Hgs.PrettyPrint (renderPackage)
 
 newtype PackagePath = PackagePath { unPackagePath :: [Package] }
   deriving stock (Eq, Show)
@@ -58,9 +58,3 @@ collapseAdjacentSamePackages =
 renderPackagePath :: PackagePath -> String
 renderPackagePath (PackagePath packages) =
   intercalate " -> " (map renderPackage packages)
-
-renderPackage :: Package -> String
-renderPackage pkg =
-  Text.unpack (unPackageName (packageName pkg))
-    <> "-"
-    <> Text.unpack (unVersion (packageVersion pkg))
