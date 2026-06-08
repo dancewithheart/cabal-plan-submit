@@ -38,7 +38,7 @@ jobs:
       - name: Check with HLint
         uses: haskell-actions/hlint-run@eaca4cfbf4a69f4eb875df38b6bc3e1657020378 # v2
         with:
-          path: src app test
+          path: '["src/", "app/", "test/"]'
           fail-on: warning
 
       - name: Build
