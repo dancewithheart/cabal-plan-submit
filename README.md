@@ -1,13 +1,11 @@
 # cabal-plan-submit
 
 Haskell dependency intelligence for supply-chain security.
-- submit Cabal plan dependencies to GitHub Dependency Graph
+- submit `cabal` resolved plan (`plan.json`) with depndencies to GitHub (you can extract SBOM from GH after this)
 - explain dependency paths with `why`
 - classify direct vs transitive dependencies
 - inspect deprecated Hackage packages
 - enrich cabal-audit SARIF with locations and dependency-path metadata
-
-[Blog post](https://dancewithheart.github.io/posts/2026-05-31-cabal-plan-submit.html) explaining example use cases.
 
 ## What it does
 
@@ -37,6 +35,27 @@ Fail CI on deprecated dependencies:
 
 ```sh
 cabal-plan-submit inspect-deprecated dist-newstyle/cache/plan.json deprecated.yaml
+```
+
+## Usage as cabal command
+
+Download source code and install as an [external cabal command](https://discourse.haskell.org/t/an-external-command-system-for-cabal-what-would-you-do-with-it/7114):
+```sh
+cabal install exe:cabal-plan-submit --overwrite-policy=always
+```
+
+usage:
+```sh
+cabal plan-submit why aeson
+cabal plan-submit why --production-only aeson
+
+curl -L \
+  https://raw.githubusercontent.com/commercialhaskell/all-cabal-metadata/master/deprecated.yaml \
+  -o deprecated.yaml
+cabal plan-submit deprecated
+
+cabal plan-submit inspect-plan
+cabal plan-submit inspect-graph
 ```
 
 ## Usage
@@ -101,3 +120,7 @@ Running tests (first command generate golden tests):
 UPDATE_GOLDEN=1 cabal test
 cabal test
 ```
+
+## Blog posts
+
+[Blog post](https://dancewithheart.github.io/posts/2026-05-31-cabal-plan-submit.html) explaining example use cases.
