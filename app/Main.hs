@@ -65,7 +65,7 @@ import Hgs.Validate
   , renderValidationReport
   , validateSnapshotFile
   )
-import Hgs.Why (renderWhyFrom)
+import Hgs.Why (renderWhyFrom, renderWhyTrieFrom)
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter(..)
   )
@@ -127,6 +127,14 @@ runWithArgs rawArgs args =
       whyPackage AllLocalUnits path packageName
     ["enrich-sarif", sarifPath] ->
       enrichSarif AllLocalUnits defaultPlanJsonPath sarifPath
+    ["why-tree", path, packageName] ->
+      whyPackageTree AllLocalUnits path packageName
+    ["why-tree", "--production-only", path, packageName] ->
+      whyPackageTree ProductionLocalUnits path packageName
+    ["why-tree", packageName] ->
+      whyPackageTree AllLocalUnits defaultPlanJsonPath packageName
+    ["why-tree", "--production-only", packageName] ->
+      whyPackageTree ProductionLocalUnits defaultPlanJsonPath packageName
     ["enrich-sarif", planPath, sarifPath] ->
       enrichSarif AllLocalUnits planPath sarifPath
     ["enrich-sarif", "--production-only", sarifPath] ->
@@ -362,6 +370,15 @@ whyPackage localFilter path packageName = do
   plan <- readPlanOrDie path
   putStr $
     renderWhyFrom
+      localFilter
+      (PackageName (Text.pack packageName))
+      (extractPlanGraph plan)
+
+whyPackageTree :: LocalUnitFilter -> FilePath -> String -> IO ()
+whyPackageTree localFilter path packageName = do
+  plan <- readPlanOrDie path
+  putStr $
+    renderWhyTrieFrom
       localFilter
       (PackageName (Text.pack packageName))
       (extractPlanGraph plan)
@@ -641,9 +658,9 @@ usage =
     , "  cabal-plan-submit inspect-locals [PATH_TO_PLAN_JSON]"
     , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
     , "  cabal-plan-submit validate-snapshot PATH_TO_SNAPSHOT_JSON"
-    , "  cabal-plan-submit inspect-deprecated [--production-only] [--fail-on none|direct|any] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
+    , "  cabal-plan-submit [inspect-]deprecated [--production-only] [--fail-on none|direct|any] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     , "  cabal-plan-submit why [--production-only] [PATH_TO_PLAN_JSON] PACKAGE_NAME"
-    , "  cabal-plan-submit enrich-sarif PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
-    , "  cabal-plan-submit enrich-sarif --production-only PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
+    , "  cabal-plan-submit why-tree [--production-only] [PATH_TO_PLAN_JSON] PACKAGE_NAME"
+    , "  cabal-plan-submit enrich-sarif [--production-only] PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
     , "  cabal-plan-submit deprecated-sarif [--production-only] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     ]

@@ -37,11 +37,12 @@ import Hgs.Domain
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter
   )
-import Hgs.Why
+import Hgs.Paths
   ( PackagePath(..)
   , renderPackagePath
-  , shortestPathsToPackageFrom
   )
+import Hgs.Why (shortestPathsToPackageFrom)
+import Hgs.PrettyPrint (renderPackageText)
 
 type CabalLineIndex = Map (FilePath, PackageName) Int
 
@@ -470,12 +471,6 @@ effectiveSeverityTag explanation =
 problemSeverity :: FindingExplanation -> Text
 problemSeverity =
   problemSeverityText . effectiveSeverity
-
-renderPackageText :: Package -> Text
-renderPackageText pkg =
-  unPackageName (packageName pkg)
-    <> "-"
-    <> unVersion (packageVersion pkg)
 
 adjustArrayField :: Text -> (Value -> Value) -> KeyMap Value -> KeyMap Value
 adjustArrayField field f o =

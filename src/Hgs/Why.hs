@@ -9,9 +9,9 @@ module Hgs.Why
   , renderWhyFrom
   , renderPackagePath
   , shortestPathsToPackageFrom
+  , renderWhyTrieFrom
   ) where
 
-import Data.List (intercalate)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Sequence (Seq((:<|)), (|>))
@@ -24,17 +24,21 @@ import Hgs.Domain
   , PackageSource(..)
   , PlanGraph(..)
   , UnitId
-  , Version(..)
   )
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter(..)
   , localUnitAllowed
   )
-
-newtype PackagePath = PackagePath
-  { unPackagePath :: [Package]
-  }
-  deriving stock (Eq, Show)
+import Hgs.Paths
+  ( PackagePath(..)
+  , normalizePackagePath
+  , packagePathKey
+  , renderPackagePath
+  )
+import Hgs.PathTrie
+  ( pathTrieFromPaths
+  , renderPathTrie
+  )
 
 shortestPathsToPackage :: PackageName -> PlanGraph -> [PackagePath]
 shortestPathsToPackage =
@@ -53,31 +57,9 @@ shortestPathsToPackageFrom filterKind target graph =
     , packageSource pkg == PackageLocal
     , localUnitAllowed filterKind pkg
     ]
+
   pathToLocalRoot root =
     bfs packages target root
-
-normalizePackagePath :: PackagePath -> PackagePath
-normalizePackagePath =
-  PackagePath . collapseAdjacentSamePackages . unPackagePath
-
-collapseAdjacentSamePackages :: [Package] -> [Package]
-collapseAdjacentSamePackages =
-  \case
-    [] -> []
-    x : xs -> x : go x xs
- where
-  go _ [] = []
-  go previous (x : xs)
-    | packageKey previous == packageKey x = go previous xs
-    | otherwise = x : go x xs
-
-packagePathKey :: PackagePath -> [(PackageName, Version)]
-packagePathKey =
-  map packageKey . unPackagePath
-
-packageKey :: Package -> (PackageName, Version)
-packageKey pkg =
-  (packageName pkg, packageVersion pkg)
 
 nubOn :: Ord b => (a -> b) -> [a] -> [a]
 nubOn f =
@@ -139,15 +121,16 @@ renderWhyFrom filterKind target graph =
         [ Text.unpack (unPackageName target) , "paths:" ]
           <> map (("  " <>) . renderPackagePath) paths
 
-renderPackagePath :: PackagePath -> String
-renderPackagePath =
-  intercalate " -> " . map renderPackage . unPackagePath
+renderWhyTrieFrom :: LocalUnitFilter -> PackageName -> PlanGraph -> String
+renderWhyTrieFrom filterKind target graph =
+  case pathTrieFromPaths (shortestPathsToPackageFrom filterKind target graph) of
+    Nothing ->
+      "no path found to " <> Text.unpack (unPackageName target) <> "\n"
 
-renderPackage :: Package -> String
-renderPackage pkg =
-  Text.unpack (unPackageName (packageName pkg))
-    <> "-"
-    <> Text.unpack (unVersion (packageVersion pkg))
+    Just trie ->
+      Text.unpack (unPackageName target)
+        <> "\ndependency tree:\n"
+        <> renderPathTrie trie
 
 maybeToList :: Maybe a -> [a]
 maybeToList =

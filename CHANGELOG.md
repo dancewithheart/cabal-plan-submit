@@ -80,3 +80,12 @@
 * Include deprecated package replacements, dependency paths, direct/transitive relationship, and precise `.cabal` locations in generated SARIF.
 * Support `--production-only` and `--ignore-package` for deprecated SARIF output. ([#9](https://github.com/dancewithheart/cabal-plan-submit/pull/9))
 * Add name of the deprecated library in issue title. ([#23](https://github.com/dancewithheart/cabal-plan-submit/issues/23))
+
+## 0.1.1.0 -- 2026-06-08
+
+* Add `-why-tree` reverse tree of paths to dependency. ([#36](https://github.com/dancewithheart/cabal-plan-submit/pull/36))
+* Allow to use `cabal plan-submit xyz` using cabal external commands. ([#39](https://github.com/dancewithheart/cabal-plan-submit/pull/39))
+* More verbose errors on wrong CLI arguments.
+* Add alias deprecated to inspect-deprecated.
+* Add zizmor for CI. ([#33](https://github.com/dancewithheart/cabal-plan-submit/pull/33))
+* Add golden tests. ([#37](https://github.com/dancewithheart/cabal-plan-submit/pull/37))
