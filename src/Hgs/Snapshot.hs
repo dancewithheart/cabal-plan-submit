@@ -15,6 +15,7 @@ import Data.Aeson
   , (.=)
   )
 import Data.ByteString.Lazy (ByteString)
+import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes)
@@ -190,9 +191,9 @@ percentEncode =
     | otherwise = pct c
 
   isUnreserved c =
-    ('A' <= c && c <= 'Z')
-      || ('a' <= c && c <= 'z')
-      || ('0' <= c && c <= '9')
+    isAsciiUpper c
+      || isAsciiLower c
+      || isDigit c
       || c `elem` ("-._~" :: String)
 
   pct c =
