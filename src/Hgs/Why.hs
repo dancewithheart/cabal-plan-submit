@@ -1,5 +1,4 @@
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hgs.Why
@@ -58,8 +57,8 @@ shortestPathsToPackageFrom filterKind target graph =
     , localUnitAllowed filterKind pkg
     ]
 
-  pathToLocalRoot root =
-    bfs packages target root
+  pathToLocalRoot =
+    bfs packages target
 
 nubOn :: Ord b => (a -> b) -> [a] -> [a]
 nubOn f =

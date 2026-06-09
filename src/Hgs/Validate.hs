@@ -184,7 +184,7 @@ expectStringArrayField here field o =
       let vals = Vector.toList arr
           bad =
             [ oneError (here <> "." <> field <> ": expected array of strings")
-            | any (not . isString) vals
+            | not (all isString vals)
             ]
        in (mconcat bad, [t | String t <- vals])
     Just _ ->

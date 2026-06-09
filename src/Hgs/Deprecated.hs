@@ -242,22 +242,15 @@ findDeprecatedPackagesFrom filterKind index graph =
         , DeprecatedPackage
             { deprecatedPackageName = packageName pkg
             , deprecatedPackageVersion = packageVersion pkg
-            , deprecatedRelationship =
-                relationshipFromPaths pkg paths
-            , deprecatedReplacements =
-                deprecationReplacements dep
-            , deprecatedReason =
-                deprecationReason dep
-            , deprecatedPath =
-                listToMaybe paths
-            }
-        )
-      | pkg <- Map.elems (planGraphPackages graph)
-      , packageSource pkg == PackageExternal
-      , dep <- maybeToList (Map.lookup (packageName pkg) index)
-      , let paths = shortestPathsToPackageFrom filterKind (packageName pkg) graph
-      , not (null paths)
-      ]
+            , deprecatedRelationship = relationshipFromPaths pkg paths
+            , deprecatedReplacements = deprecationReplacements dep
+            , deprecatedReason = deprecationReason dep
+             ,deprecatedPath = listToMaybe paths}) |
+           pkg <- Map.elems (planGraphPackages graph),
+           packageSource pkg == PackageExternal,
+           let paths = shortestPathsToPackageFrom filterKind (packageName pkg) graph,
+           not (null paths),
+           dep <- maybeToList (Map.lookup (packageName pkg) index)]
 
 relationshipFromPaths :: Package -> [PackagePath] -> Text
 relationshipFromPaths pkg paths
