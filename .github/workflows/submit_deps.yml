@@ -3,7 +3,6 @@ name: Dependency submission and security vulnerabilities
 on:
   push:
     branches: [master, main]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
