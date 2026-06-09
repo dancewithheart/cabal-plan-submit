@@ -17,7 +17,7 @@ module TestSupport
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
-import Data.List (zipWith4)
+import Data.List (nub, zipWith4)
 import Data.Text qualified as Text
 import Data.Time.Clock (UTCTime(..), secondsToDiffTime)
 import Hgs.Domain
@@ -38,7 +38,7 @@ newtype SimplePlan = SimplePlan RawPlan
 
 instance Arbitrary SimplePlan where
   arbitrary = do
-    names <- listOf1 genBaseName
+    names <- nub <$> listOf1 genBaseName
     let unitIds = mkUnitIds names
     depLists <- vectorOf (length unitIds) (listOf (elements (unknownUnitId : unitIds)))
     localFlags <- vectorOf (length unitIds) arbitrary
