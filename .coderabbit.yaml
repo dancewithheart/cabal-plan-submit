@@ -5,7 +5,7 @@ language: "en-US"
 reviews:
   profile: "assertive"
   request_changes_workflow: false
-  high_level_summary: true
+  high_level_summary: false
   review_status: true
   review_details: false
 
@@ -27,11 +27,10 @@ reviews:
         Review as Haskell library code.
         Focus on:
         - totality and explicit failure modes
-        - preserving graph invariants
-        - avoiding silent data loss when parsing Cabal plan.json
+        - preserving invariants
+        - avoiding silent data loss
         - small focused functions
         - property-testable behavior
-        - avoiding unnecessary monad transformers
         - propose using abstractions from mathematics
 
     - path: "app/**/*.hs"
@@ -41,7 +40,7 @@ reviews:
         - actionable error messages
         - stable command-line behavior
         - compatibility with GitHub Actions
-        - not hiding parse or validation failures
+        - not hiding failures
 
     - path: "test/**/*.hs"
       instructions: |
