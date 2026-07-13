@@ -47,7 +47,6 @@ jobs:
         with:
           path: |
             ~/.cabal/store
-            ~/.cabal/packages
             cabal-plan-submit/dist-newstyle
             cabal-audit/dist-newstyle
             project/dist-newstyle
