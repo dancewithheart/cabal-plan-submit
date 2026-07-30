@@ -18,7 +18,7 @@ extra-doc-files:     README.md
                    , CHANGELOG.md
 
 extra-source-files:
-    test/golden/deprecated.yam
+    test/golden/deprecated.yaml
     test/golden/unix-time/plan.json
     test/golden/unix-time/inspect-deprecated-production.golden
     test/golden/persistent/plan.json
