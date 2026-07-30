@@ -17,6 +17,17 @@ bug-reports:         https://github.com/dancewithheart/cabal-plan-submit/issues
 extra-doc-files:     README.md
                    , CHANGELOG.md
 
+extra-source-files:
+    test/golden/deprecated.yam
+    test/golden/unix-time/plan.json
+    test/golden/unix-time/inspect-deprecated-production.golden
+    test/golden/persistent/plan.json
+    test/golden/persistent/sarif.json
+    test/golden/persistent/enrich-sarif-projection.golden
+    test/golden/persistent/sarif_enriched.json
+    test/golden/cabal_plan_json/plan.json
+    test/golden/cabal_plan_json/snapshot.json
+
 source-repository head
   type: git
   location: https://github.com/dancewithheart/cabal-plan-submit.git
@@ -89,16 +100,7 @@ test-suite plan-json-test
       SnapshotSpec
       SarifEnrichSpec
       TestSupport
-  extra-source-files:
-    test/golden/deprecated.yaml
-    test/golden/unix-time/plan.json
-    test/golden/unix-time/inspect-deprecated-production.golden
-    test/golden/persistent/plan.json
-    test/golden/persistent/sarif.json
-    test/golden/persistent/enrich-sarif-projection.golden
-    test/golden/persistent/sarif_enriched.json
-    test/golden/cabal_plan_json/plan.json
-    test/golden/cabal_plan_json/snapshot.json
+
   default-language: GHC2021
   ghc-options:
     -Wall
