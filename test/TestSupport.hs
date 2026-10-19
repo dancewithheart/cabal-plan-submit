@@ -42,13 +42,14 @@ instance Arbitrary SimplePlan where
     let unitIds = mkUnitIds names
     depLists <- vectorOf (length unitIds) (listOf (elements (unknownUnitId : unitIds)))
     localFlags <- vectorOf (length unitIds) arbitrary
+    packageNames <- vectorOf (length unitIds) (elements names)
     pure $
       SimplePlan $
         RawPlan
           { rawPlanCabalVersion = Nothing
           , rawPlanCompilerId = Nothing
           , rawPlanItems =
-              zipWith4 mkItem unitIds depLists localFlags [1 :: Int ..]
+              zipWith4 mkItem unitIds depLists localFlags packageNames
           }
 
 genBaseName :: Int -> Gen [String]
@@ -61,12 +62,12 @@ mkUnitIds :: [String] -> [UnitId]
 mkUnitIds =
   map (\n -> UnitId (toText (n <> "-1.0.0")))
 
-mkItem :: UnitId -> [UnitId] -> Bool -> Int -> RawPlanItem
-mkItem unitId deps isLocal n =
+mkItem :: UnitId -> [UnitId] -> Bool -> String -> RawPlanItem
+mkItem unitId deps isLocal name =
   RawPlanItem
     { rawPlanItemType = Just "configured"
     , rawPlanItemId = Just unitId
-    , rawPlanItemPkgName = Just (PackageName (toText ("pkg" <> show n)))
+    , rawPlanItemPkgName = Just (PackageName (toText name))
     , rawPlanItemPkgVersion = Just (Version "1.0.0")
     , rawPlanItemComponents = []
     , rawPlanItemDepends = deps
