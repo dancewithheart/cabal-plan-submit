@@ -38,26 +38,37 @@ spec = do
     it "has closure over resolved dependencies" $
       property prop_snapshotHasClosure
 
+    it "has no duplicate dependency PURLs" $
+      property prop_snapshotHasUniqueDependencies
+
     it "marks direct external dependencies soundly" $
       property prop_directnessSoundness
 
-    it "collapses duplicate PURLs and still has no self edge" $ do
+    it "deduplicates dependency PURLs without losing sublibrary edges" $ do
       let rawPlan =
             RawPlan
               { rawPlanCabalVersion = Nothing
               , rawPlanCompilerId = Nothing
               , rawPlanItems =
-                  [ mkLocal "root-0.1.0.0-inplace" [UnitId "vector-A", UnitId "vector-B"]
-                  , mkExternalWith "vector-A" "vector" "0.13.2.0" [UnitId "base-4.18.3.0", UnitId "vector-B"]
-                  , mkExternalWith "vector-B" "vector" "0.13.2.0" [UnitId "base-4.18.3.0"]
-                  , mkExternal "base-4.18.3.0" "base" "4.18.3.0"
+                  [ mkLocal "root-0.1.0.0-inplace" [UnitId "vector-A"]
+                  , mkExternalWith "vector-A" "vector" "0.13.2.0" [UnitId "base-A", UnitId "base-B", UnitId "vector-B"]
+                  , mkExternalWith "vector-B" "vector" "0.13.2.0" [UnitId "text-2.0.2"]
+                  , mkExternal "base-A" "base" "4.18.3.0"
+                  , mkExternal "base-B" "base" "4.18.3.0"
+                  , mkExternal "text-2.0.2" "text" "2.0.2"
                   ]
               }
           value = Aeson.toJSON (snapshotFromPlanGraph snapshotInput (extractPlanGraph rawPlan))
           resolved = expectObject (valueKey "resolved" (valueKey "cabal-project" (valueKey "manifests" value)))
+          vect = valueKey "pkg:hackage/vector@0.13.2.0" (Aeson.Object resolved)
           errs = getValidationErrors (validateSnapshotValue value)
 
-      KeyMap.size resolved `shouldBe` 2
+      KeyMap.size resolved `shouldBe` 3
+      dependencies (entryFromValue vect) `shouldMatchList`
+        [ "pkg:hackage/base@4.18.3.0"
+        , "pkg:hackage/text@2.0.2"
+        ]
+      valueKey "relationship" vect `shouldBe` Aeson.String "direct"
       errs `shouldBe` []
 
 prop_snapshotHasNoSelfPurlEdges :: SimplePlan -> Bool
@@ -69,6 +80,17 @@ prop_snapshotHasNoSelfPurlEdges (SimplePlan rawPlan) =
 
   noSelfEdge entry =
     packageUrl entry `notElem` dependencies entry
+
+prop_snapshotHasUniqueDependencies :: SimplePlan -> Bool
+prop_snapshotHasUniqueDependencies (SimplePlan rawPlan) =
+  all unique (resolvedEntries snapshotValue)
+ where
+  snapshotValue =
+    Aeson.toJSON (snapshotFromPlanGraph snapshotInput (extractPlanGraph rawPlan))
+
+  unique entry =
+    let deps = dependencies entry
+     in length deps == Set.size (Set.fromList deps)
 
 prop_snapshotHasClosure :: SimplePlan -> Bool
 prop_snapshotHasClosure (SimplePlan rawPlan) =

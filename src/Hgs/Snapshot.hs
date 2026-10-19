@@ -16,6 +16,7 @@ import Data.Aeson
   )
 import Data.ByteString.Lazy (ByteString)
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
+import Data.Containers.ListUtils (nubOrd)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes)
@@ -123,7 +124,7 @@ manifestFromGraph input graph =
     { manifestName = snapshotManifestName input
     , manifestFilePath = snapshotManifestPath input >>= nonEmptyPath
     , manifestResolved =
-        Map.fromList
+        Map.fromListWith mergeResolved
           [ (unPurl (packagePurl pkg), resolvedFromPackage purlByUnitId externalUnitIds pkg)
           | pkg <- externalPackages
           ]
@@ -148,6 +149,19 @@ manifestFromGraph input graph =
       | pkg <- externalPackages
       ]
 
+-- A PURL identifies a package version, not an individual Cabal unit.
+-- Combine dependencies and directness rather than discarding a component.
+mergeResolved :: Resolved -> Resolved -> Resolved
+mergeResolved a b =
+  a
+    { resolvedRelationship =
+        if resolvedRelationship a == "direct" || resolvedRelationship b == "direct"
+          then "direct"
+          else "indirect"
+    , resolvedDependencies =
+        nubOrd (resolvedDependencies a <> resolvedDependencies b)
+    }
+
 nonEmptyPath :: FilePath -> Maybe FilePath
 nonEmptyPath path
   | null path = Nothing
@@ -161,11 +175,12 @@ resolvedFromPackage purlByUnitId externalUnitIds pkg =
         if packageIsDirect pkg then "direct" else "indirect"
     , resolvedScope = "runtime"
     , resolvedDependencies =
-        [ depPurl
-        | depUnitId <- Set.toAscList (Set.filter (`Set.member` externalUnitIds) (packageDepends pkg))
-        , depPurl <- maybeToList (Map.lookup depUnitId purlByUnitId)
-        , depPurl /= pkgPurl
-        ]
+        nubOrd
+          [ depPurl
+          | depUnitId <- Set.toAscList (Set.filter (`Set.member` externalUnitIds) (packageDepends pkg))
+          , depPurl <- maybeToList (Map.lookup depUnitId purlByUnitId)
+          , depPurl /= pkgPurl
+          ]
     }
  where
   pkgPurl = packagePurl pkg

@@ -3,6 +3,8 @@
 
 module GoldenSpec (spec) where
 
+import Control.Monad (unless)
+import Data.Set qualified as Set
 import Data.Aeson (Value(..))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
@@ -86,7 +88,12 @@ golden name expectedPath action =
               ]
           else do
             expected <- BS.readFile expectedPath
-            actual `shouldBe` expected
+            -- actual `shouldBe` expected -- very verbose error
+            unless (actual == expected) $
+              expectationFailure $
+                "Golden mismatch: " <> expectedPath
+                  <> "\nFirst differences (up to 12):\n"
+                  <> unlines (take 12 (goldenDiff expected actual))
 
 shouldUpdateGolden :: IO Bool
 shouldUpdateGolden = do
@@ -282,3 +289,65 @@ readFixtureOrFail path = do
           , "  cp ./golden/persistent_plan.json test/golden/persistent/plan.json"
           ]
       ) *> fail "unreachable"
+
+goldenDiff :: ByteString -> ByteString -> [String]
+goldenDiff expected actual =
+  case (Aeson.decodeStrict' expected, Aeson.decodeStrict' actual) of
+    (Just e, Just a)
+      | e == a -> ["JSON values match; formatting differs"]
+      | otherwise -> jsonDiff "$" e a
+    _ ->
+      let beforeLines = BS8.lines expected
+          afterLines = BS8.lines actual
+          n = length (takeWhile (uncurry (==)) (zip beforeLines afterLines))
+          at xs = case drop n xs of
+            x : _ -> show (BS8.take 160 x)
+            [] -> "<end of file>"
+       in [ "First different line: " <> show (n + 1)
+          , "- " <> at beforeLines
+          , "+ " <> at afterLines
+          ]
+
+jsonDiff :: String -> Value -> Value -> [String]
+jsonDiff _path expected actual
+  | expected == actual = []
+
+jsonDiff path (Object expected) (Object actual) =
+  concatMap diffKey keys
+ where
+  keys =
+    Set.toAscList $
+      Set.fromList (KeyMap.keys expected <> KeyMap.keys actual)
+
+  diffKey key =
+    let child = path <> "." <> Key.toString key
+     in case (KeyMap.lookup key expected, KeyMap.lookup key actual) of
+          (Just e, Just a) -> jsonDiff child e a
+          (Just _, Nothing) -> ["- " <> child]
+          (Nothing, Just _) -> ["+ " <> child]
+          _ -> []
+
+jsonDiff path (Array expected) (Array actual) =
+  case (traverse asText (Vector.toList expected),
+        traverse asText (Vector.toList actual)) of
+    (Just es, Just as) ->
+      let removed = ["- " <> path <> ": " <> Text.unpack x
+                    | x <- es, x `notElem` as]
+          added = ["+ " <> path <> ": " <> Text.unpack x
+                  | x <- as, x `notElem` es]
+       in if null removed && null added
+            then [path <> ": order or multiplicities changed"]
+            else removed <> added
+
+    _ -> [path <> ": array changed"]
+
+jsonDiff path expected actual =
+  [ path <> ": "
+      <> take 100 (show expected)
+      <> " -> "
+      <> take 100 (show actual)
+  ]
+
+asText :: Value -> Maybe Text.Text
+asText (String t) = Just t
+asText _ = Nothing

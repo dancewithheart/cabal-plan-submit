@@ -90,3 +90,8 @@
 * Add zizmor for CI. ([#33](https://github.com/dancewithheart/cabal-plan-submit/pull/33))
 * Add golden tests. ([#37](https://github.com/dancewithheart/cabal-plan-submit/pull/37))
 * Add hlint to CI. ([#41](https://github.com/dancewithheart/cabal-plan-submit/pull/41))
+
+## 0.1.1.1 -- 2026-10-19
+
+* Deduplicate dependency PURLs for Cabal packages with multiple library components. ([#49](https://github.com/dancewithheart/cabal-plan-submit/issues/49))
+* Merge dependency edges and preserve direct dependency classification across sublibraries.
