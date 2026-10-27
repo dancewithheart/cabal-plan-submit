@@ -130,4 +130,4 @@ hlint src app test
 ## Blog posts
 
 * [Blog post](https://dancewithheart.github.io/posts/2026-05-31-cabal-plan-submit.html) explaining example use cases.
-* [SBOM generation for Haskell projects](https://github.com/haskell/security-advisories/blob/main/guides/sbom_dependencies.md) - on guide on [haskell.org/security](https://www.haskell.org/security/)
+* [SBOM generation for Haskell projects](https://github.com/haskell/security-advisories/blob/main/guides/sbom_dependencies.md) - guide on [haskell.org/security](https://www.haskell.org/security/)
