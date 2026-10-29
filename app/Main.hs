@@ -49,7 +49,7 @@ import Hgs.Domain
   , PlanGraph(..)
   , RawPlan
   )
-import Hgs.Extract (extractPlanGraph, summarisePlanGraph)
+import Hgs.Extract (extractPlanGraphChecked, summarisePlanGraph)
 import Hgs.Input.PlanJson (readRawPlan, summariseRawPlan)
 import Hgs.Locals
   ( inspectLocals
@@ -255,12 +255,12 @@ inspectPlan path = do
 
 inspectGraph :: FilePath -> IO ()
 inspectGraph path = do
-  plan <- readPlanOrDie path
-  putStrLn (summarisePlanGraph (extractPlanGraph plan))
+  graph <- readGraphOrDie path
+  putStrLn (summarisePlanGraph graph)
 
 renderSnapshot :: FilePath -> String -> String -> IO ()
 renderSnapshot path sha ref = do
-  plan <- readPlanOrDie path
+  graph <- readGraphOrDie path
   scannedAt <- getCurrentTime
   manifestPath <- detectManifestPath
   let input =
@@ -278,7 +278,7 @@ renderSnapshot path sha ref = do
           , snapshotDetectorUrl = "https://github.com/dancewithheart/cabal-plan-submit"
           }
       snapshot =
-        snapshotFromPlanGraph input (extractPlanGraph plan)
+        snapshotFromPlanGraph input graph
   LBS8.putStrLn (encodeSnapshot snapshot)
 
 validateSnapshot :: FilePath -> IO ()
@@ -307,6 +307,11 @@ readPlanOrDie path = do
         Right plan ->
           pure plan
 
+readGraphOrDie :: FilePath -> IO PlanGraph
+readGraphOrDie path = do
+  plan <- readPlanOrDie path
+  either (die . ("invalid plan graph: " <>) . show) pure (extractPlanGraphChecked plan)
+
 detectManifestPath :: IO (Maybe FilePath)
 detectManifestPath = do
   cabalProjectExists <- doesFileExist "cabal.project"
@@ -334,7 +339,7 @@ missingPlanMessage path =
 
 inspectDeprecated :: InspectDeprecatedOptions -> IO ()
 inspectDeprecated opts = do
-  plan <- readPlanOrDie (inspectDeprecatedPlanPath opts)
+  graph <- readGraphOrDie (inspectDeprecatedPlanPath opts)
   eIndex <- readDeprecationIndex (inspectDeprecatedMetadataPath opts)
   case eIndex of
     Left err -> die ("failed to parse deprecated metadata: " <> err)
@@ -345,7 +350,7 @@ inspectDeprecated opts = do
               ( findDeprecatedPackagesFrom
                   (inspectDeprecatedLocalFilter opts)
                   index
-                  (extractPlanGraph plan)
+                  graph
               )
       putStr (renderDeprecatedPackages deprecated)
       when (shouldFailOnDeprecated (inspectDeprecatedFailOn opts) deprecated) $ do
@@ -367,33 +372,32 @@ failOnMessage = \case
 
 whyPackage :: LocalUnitFilter -> FilePath -> String -> IO ()
 whyPackage localFilter path packageName = do
-  plan <- readPlanOrDie path
+  graph <- readGraphOrDie path
   putStr $
     renderWhyFrom
       localFilter
       (PackageName (Text.pack packageName))
-      (extractPlanGraph plan)
+      graph
 
 whyPackageTree :: LocalUnitFilter -> FilePath -> String -> IO ()
 whyPackageTree localFilter path packageName = do
-  plan <- readPlanOrDie path
+  graph <- readGraphOrDie path
   putStr $
     renderWhyTrieFrom
       localFilter
       (PackageName (Text.pack packageName))
-      (extractPlanGraph plan)
+      graph
 
 inspectLocalPackages :: FilePath -> IO ()
 inspectLocalPackages path = do
-  plan <- readPlanOrDie path
+  graph <- readGraphOrDie path
   putStr $
     renderLocals
-      (inspectLocals (extractPlanGraph plan))
+      (inspectLocals graph)
 
 enrichSarif :: LocalUnitFilter -> FilePath -> FilePath -> IO ()
 enrichSarif localFilter planPath sarifPath = do
-  plan <- readPlanOrDie planPath
-  let graph = extractPlanGraph plan
+  graph <- readGraphOrDie planPath
   let repoRoot = guessRepoRoot graph
   lineIndex <- buildCabalLineIndex repoRoot graph
   sarifBytes <- readSarifFileOrDie sarifPath
@@ -620,17 +624,14 @@ parseDeprecatedSarifOptions =
 
 deprecatedSarif :: LocalUnitFilter -> Set PackageName -> FilePath -> FilePath -> IO ()
 deprecatedSarif localFilter ignoredPackages planPath deprecatedPath = do
-  plan <- readPlanOrDie planPath
+  graph <- readGraphOrDie planPath
   eIndex <- readDeprecationIndex deprecatedPath
   case eIndex of
     Left err ->
       die ("failed to parse deprecated metadata: " <> err)
 
     Right index -> do
-      let graph =
-            extractPlanGraph plan
-
-          repoRoot =
+      let repoRoot =
             guessRepoRoot graph
 
       lineIndex <- buildCabalLineIndex repoRoot graph

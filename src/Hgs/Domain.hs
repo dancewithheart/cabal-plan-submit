@@ -20,8 +20,8 @@ import Data.Aeson
   ( FromJSON(parseJSON)
   , Value(..)
   , withObject
+  , (.:)
   , (.:?)
-  , (.!=)
   )
 import Data.Aeson.Types (Parser)
 import Data.Aeson.Key qualified as Key
@@ -92,7 +92,7 @@ instance FromJSON RawPlan where
     RawPlan
       <$> o .:? "cabal-lib-version"
       <*> o .:? "compiler-id"
-      <*> o .:? "install-plan" .!= []
+      <*> o .: "install-plan"
 
 instance FromJSON RawPkgSrc where
   parseJSON = withObject "RawPkgSrc" $ \o ->

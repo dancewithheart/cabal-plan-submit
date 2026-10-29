@@ -7,6 +7,7 @@ module PlanJsonSpec (spec) where
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Either (isLeft, isRight)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Hgs.Domain
@@ -23,18 +24,23 @@ import Hgs.Domain
   , UnitId(..)
   , Version(..)
   )
-import Hgs.Extract (extractPlanGraph)
+import Hgs.Extract (PlanGraphError(..), extractPlanGraph, extractPlanGraphChecked)
 import Hgs.Input.PlanJson (decodeRawPlan)
 import Hgs.Snapshot
   ( snapshotFromPlanGraph
   )
 import Test.Hspec
 import Test.QuickCheck
-import TestSupport (SimplePlan(..), expectObject, simpleGraph, snapshotInput, valueKey)
+import TestSupport (SimplePlan(..), expectObject, mkExternalWith, mkLocal, simpleGraph, snapshotInput, valueKey)
 
 spec :: Spec
 spec = do
   describe "decodeRawPlan" $ do
+    it "requires an install-plan array while allowing an empty one" $ do
+      map decodeRawPlan ["{}", "{\"install-plan\":null}", "{\"install-plan\":{}}"]
+        `shouldSatisfy` all isLeft
+      decodeRawPlan "{\"install-plan\":[]}" `shouldSatisfy` isRight
+
     it "parses a minimal plan with one install-plan entry" $ do
       let input =
             "{\
@@ -269,6 +275,34 @@ spec = do
     it "keeps only dependency edges to known packages" $
       property prop_extractGraphKeepsKnownTargets
 
+  describe "extractPlanGraphChecked" $ do
+    let plan items = RawPlan Nothing Nothing items
+        root deps = mkLocal "root" deps
+        dependency deps = mkExternalWith "dep" "dep" "1" deps
+
+    it "rejects a dangling dependency before extracting a graph" $
+      extractPlanGraphChecked (plan [root [UnitId "missing"]])
+        `shouldBe` Left (UnknownDependency (UnitId "root") (UnitId "missing"))
+
+    it "rejects incomplete records and duplicate unit identities" $ do
+      extractPlanGraphChecked (plan [(root []) { rawPlanItemPkgVersion = Nothing }])
+        `shouldBe` Left (IncompletePlanItem 0)
+      extractPlanGraphChecked (plan [root [], root []])
+        `shouldBe` Left (DuplicateUnit (UnitId "root"))
+
+    it "preserves cycles and repeated edges in set form" $ do
+      let result = extractPlanGraphChecked (plan [root [UnitId "dep", UnitId "dep"], dependency [UnitId "root"]])
+      fmap (fmap packageDepends . Map.lookup (UnitId "root") . planGraphPackages) result
+        `shouldBe` Right (Just (Set.singleton (UnitId "dep")))
+      fmap (fmap packageDepends . Map.lookup (UnitId "dep") . planGraphPackages) result
+        `shouldBe` Right (Just (Set.singleton (UnitId "root")))
+
+    it "retains all represented edges in valid plans" $
+      property (withMaxSuccess 1000 prop_checkedPreservesEdges)
+
+    it "rejects generated plans with an unknown target" $
+      property (withMaxSuccess 1000 prop_checkedRejectsUnknown)
+
   describe "snapshotFromPlanGraph" $ do
     it "emits only external packages in resolved" $ do
       let graph = simpleGraph
@@ -281,6 +315,30 @@ spec = do
 
     it "keeps resolved dependency references inside resolved keys" $
       property prop_snapshotDependenciesStayInsideResolved
+
+prop_checkedPreservesEdges :: SimplePlan -> Bool
+prop_checkedPreservesEdges (SimplePlan raw) =
+  case extractPlanGraphChecked valid of
+    Left _ -> False
+    Right graph ->
+      Map.keysSet (planGraphPackages graph) == known && all (preserved graph) items
+ where
+  known = Set.fromList [uid | item <- rawPlanItems raw, Just uid <- [rawPlanItemId item]]
+  items = [item {rawPlanItemDepends = filter (`Set.member` known) (rawPlanItemDepends item)} | item <- rawPlanItems raw]
+  valid = raw {rawPlanItems = items}
+  preserved graph item =
+    case rawPlanItemId item of
+      Nothing -> False
+      Just uid -> fmap packageDepends (Map.lookup uid (planGraphPackages graph)) == Just (Set.fromList (rawPlanItemDepends item))
+
+prop_checkedRejectsUnknown :: SimplePlan -> Bool
+prop_checkedRejectsUnknown (SimplePlan raw) =
+  case rawPlanItems raw of
+    [] -> False
+    item : rest ->
+      case extractPlanGraphChecked (raw {rawPlanItems = item {rawPlanItemDepends = UnitId "unknown-9.9.9" : rawPlanItemDepends item} : rest}) of
+        Left (UnknownDependency _ _) -> True
+        _ -> False
 
 prop_extractGraphKeepsKnownTargets :: SimplePlan -> Bool
 prop_extractGraphKeepsKnownTargets (SimplePlan rawPlan) =
