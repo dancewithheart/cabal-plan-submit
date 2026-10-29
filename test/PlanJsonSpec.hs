@@ -276,9 +276,9 @@ spec = do
       property prop_extractGraphKeepsKnownTargets
 
   describe "extractPlanGraphChecked" $ do
-    let plan items = RawPlan Nothing Nothing items
-        root deps = mkLocal "root" deps
-        dependency deps = mkExternalWith "dep" "dep" "1" deps
+    let plan = RawPlan Nothing Nothing
+        root = mkLocal "root"
+        dependency = mkExternalWith "dep" "dep" "1"
 
     it "rejects a dangling dependency before extracting a graph" $
       extractPlanGraphChecked (plan [root [UnitId "missing"]])
