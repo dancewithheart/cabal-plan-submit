@@ -47,6 +47,15 @@ import Test.Hspec
 
 spec :: Spec
 spec = do
+  describe "SARIF result preservation" $ do
+    it "keeps unmatched advisories in the full enriched SARIF" $ do
+      plan <- decodePlanFileOrFail "test/golden/persistent/plan.json"
+      sarif <- decodeJsonFileOrFail "test/golden/persistent/sarif.json"
+      let enriched = enrichSarifValue Map.empty AllLocalUnits (extractPlanGraph plan) sarif
+          ruleIds = map (valueOrMissing "ruleId") . sarifResults
+      ruleIds enriched `shouldBe` ruleIds sarif
+      ruleIds enriched `shouldContain` ["HSEC-2026-0007"]
+
   describe "golden use cases" $ do
     golden
       "inspect-deprecated --production-only reports old-time in unix-time"

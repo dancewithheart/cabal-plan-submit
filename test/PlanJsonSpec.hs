@@ -57,8 +57,7 @@ spec = do
             \  ]\
             \}"
       case decodeRawPlan input of
-        Left err ->
-          expectationFailure err
+        Left err -> expectationFailure err
         Right plan -> do
           length (rawPlanItems plan) `shouldBe` 1
           rawPlanCompilerId plan `shouldBe` Just "ghc-9.8.2"
@@ -73,10 +72,8 @@ spec = do
             \  ]\
             \}"
       case decodeRawPlan input of
-        Left err ->
-          expectationFailure err
-        Right plan ->
-          length (rawPlanItems plan) `shouldBe` 1
+        Left err -> expectationFailure err
+        Right plan -> length (rawPlanItems plan) `shouldBe` 1
 
     it "preserves component names and component dependency sets" $ do
       let input =
@@ -108,9 +105,7 @@ spec = do
             \}"
 
       case decodeRawPlan input of
-        Left err ->
-          expectationFailure err
-
+        Left err -> expectationFailure err
         Right plan ->
           case rawPlanItems plan of
             [item] -> do
@@ -132,6 +127,22 @@ spec = do
 
             _ ->
               expectationFailure "expected exactly one plan item"
+
+    it "preserves local package source paths" $ do
+      let local =
+            RawPlanItem
+              { rawPlanItemType = Just "configured"
+              , rawPlanItemId = Just (UnitId "local-1")
+              , rawPlanItemPkgName = Just (PackageName "local")
+              , rawPlanItemPkgVersion = Just (Version "1")
+              , rawPlanItemDepends = []
+              , rawPlanItemComponents = []
+              , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "packages/local"))
+              }
+          plan = RawPlan Nothing Nothing [local]
+          packages = planGraphPackages (extractPlanGraph plan)
+      fmap packageSourcePath (Map.lookup (UnitId "local-1") packages)
+        `shouldBe` Just (Just "packages/local")
 
     it "parses component dependencies when top-level depends is null" $ do
       let input =

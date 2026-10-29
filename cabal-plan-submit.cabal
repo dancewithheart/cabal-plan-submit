@@ -92,16 +92,19 @@ test-suite plan-json-test
       Hgs.PathTrie
       Hgs.PrettyPrint
       Hgs.Sarif.Common
+      Hgs.Sarif.Deprecated
       Hgs.Sarif.Enrich
       Hgs.Snapshot
       Hgs.Validate
       Hgs.Why
+      CabalFileIndexSpec
       GoldenSpec
       DeprecatedSpec
       LocalsSpec
       PathTrieSpec
       PlanJsonSpec
       SnapshotSpec
+      SarifDeprecatedSpec
       SarifEnrichSpec
       TestSupport
 
