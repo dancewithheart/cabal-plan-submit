@@ -9,13 +9,14 @@ concurrency:
   group: security-code-scanning-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: write          # dependency submission API
-  security-events: write   # Code Scanning SARIF upload
+permissions: {}
 
 jobs:
   submit-dependencies:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write          # dependency submission API
+      security-events: write   # Code Scanning SARIF upload
 
     steps:
       - name: Checkout target project
