@@ -9,7 +9,7 @@ import Data.Aeson (Value(..))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, maybeToList)
+import Data.Maybe (maybeToList)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Vector qualified as Vector
@@ -26,19 +26,16 @@ import Hgs.Domain
   , PackageName(..)
   , Version(..)
   )
-import Hgs.Sarif.Enrich
+import Hgs.CabalFileIndex
   ( CabalLineIndex
+  , localPackageCabalFile
+  , repoRelativeCabalFile
   )
-import Hgs.Paths
-  ( PackagePath(..)
-  , renderPackagePath
+import Hgs.Sarif.Common
+  ( localRootAndDirectDependency
+  , locationValue
   )
-import System.FilePath
-  ( (</>)
-  , makeRelative
-  , normalise
-  , takeExtension
-  )
+import Hgs.Paths (renderPackagePath)
 
 deprecatedPackagesSarif :: CabalLineIndex -> FilePath -> [DeprecatedPackage] -> Value
 deprecatedPackagesSarif lineIndex repoRoot deprecated =
@@ -267,54 +264,6 @@ deprecatedLocations lineIndex repoRoot dep =
   | path <- maybeToList (deprecatedPath dep)
   , (root, directDep) <- maybeToList (localRootAndDirectDependency path)
   , sourcePath <- maybeToList (packageSourcePath root)
-  , let cabalFile = repoRelativePath repoRoot (localPackageCabalFile root sourcePath)
+  , let cabalFile = repoRelativeCabalFile repoRoot (localPackageCabalFile root sourcePath)
   , let line = Map.lookup (cabalFile, packageName directDep) lineIndex
   ]
-
-localRootAndDirectDependency :: PackagePath -> Maybe (Package, Package)
-localRootAndDirectDependency path =
-  case unPackagePath path of
-    root : directDep : _ ->
-      Just (root, directDep)
-
-    _ ->
-      Nothing
-
-locationValue :: FilePath -> Maybe Int -> Value
-locationValue cabalFile maybeLine =
-  Object $
-    KeyMap.fromList
-      [ ( "physicalLocation"
-        , Object $
-            KeyMap.fromList
-              [ ( "artifactLocation"
-                , Object $
-                    KeyMap.fromList
-                      [ ("uri", String (Text.pack cabalFile))
-                      ]
-                )
-              , ( "region"
-                , Object $
-                    KeyMap.fromList
-                      [ ("startLine", Aeson.toJSON (fromMaybe 1 maybeLine))
-                      , ("startColumn", Aeson.toJSON (1 :: Int))
-                      ]
-                )
-              ]
-        )
-      ]
-
-localPackageCabalFile :: Package -> FilePath -> FilePath
-localPackageCabalFile pkg path
-  | takeExtension path == ".cabal" =
-      normalise path
-
-  | otherwise =
-      normalise path </> Text.unpack (unPackageName (packageName pkg)) <> ".cabal"
-
-repoRelativePath :: FilePath -> FilePath -> FilePath
-repoRelativePath repoRoot path =
-  normalise $
-    makeRelative
-      (normalise repoRoot)
-      (normalise path)

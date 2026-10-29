@@ -8,6 +8,8 @@ import LocalsSpec qualified
 import PathTrieSpec qualified
 import SarifEnrichSpec qualified
 import GoldenSpec qualified
+import CabalFileIndexSpec qualified
+import SarifDeprecatedSpec qualified
 
 main :: IO ()
 main =
@@ -19,3 +21,5 @@ main =
     PathTrieSpec.spec
     SarifEnrichSpec.spec
     GoldenSpec.spec
+    CabalFileIndexSpec.spec
+    SarifDeprecatedSpec.spec
