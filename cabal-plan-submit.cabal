@@ -37,8 +37,10 @@ executable cabal-plan-submit
   hs-source-dirs:   app, src
   default-language: GHC2021
   other-modules:
+    Hgs.CabalFileIndex
     Hgs.Deprecated
     Hgs.Domain
+    Hgs.Sarif.Common
     Hgs.Sarif.Deprecated
     Hgs.Sarif.Enrich
     Hgs.Extract
@@ -79,6 +81,7 @@ test-suite plan-json-test
   main-is:          Tests.hs
   hs-source-dirs:   test, src
   other-modules:
+      Hgs.CabalFileIndex
       Hgs.Deprecated
       Hgs.Domain
       Hgs.Extract
@@ -88,6 +91,7 @@ test-suite plan-json-test
       Hgs.Paths
       Hgs.PathTrie
       Hgs.PrettyPrint
+      Hgs.Sarif.Common
       Hgs.Sarif.Enrich
       Hgs.Snapshot
       Hgs.Validate

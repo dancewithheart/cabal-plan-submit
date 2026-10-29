@@ -16,14 +16,10 @@ import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
 import Data.Foldable (asum)
 import Data.Set qualified as Set
 import Data.Map.Strict qualified as Map
-import Data.Map.Strict (Map)
 import Data.Maybe (fromMaybe, maybeToList)
 import System.FilePath
-  ( (</>)
-  , dropTrailingPathSeparator
-  , makeRelative
+  ( dropTrailingPathSeparator
   , normalise
-  , takeExtension
   )
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -44,8 +40,16 @@ import Hgs.Paths
   )
 import Hgs.Why (shortestPathsToPackageFrom)
 import Hgs.PrettyPrint (renderPackageText)
+import Hgs.CabalFileIndex
+  ( CabalLineIndex
+  , localPackageCabalFile
+  , repoRelativeCabalFile
+  )
+import Hgs.Sarif.Common
+  ( localRootAndDirectDependency
+  , locationValue
+  )
 
-type CabalLineIndex = Map (FilePath, PackageName) Int
 
 data FindingExplanation = FindingExplanation
   { explainedPackage      :: Package
@@ -273,54 +277,9 @@ explanationLocations lineIndex repoRoot explanation =
   | path <- explainedPaths explanation
   , (root, directDep) <- maybeToList (localRootAndDirectDependency path)
   , sourcePath <- maybeToList (packageSourcePath root)
-  , let cabalFile = repoRelativePath repoRoot (localPackageCabalFile root sourcePath)
+  , let cabalFile = repoRelativeCabalFile repoRoot (localPackageCabalFile root sourcePath)
   , let line = Map.lookup (cabalFile, packageName directDep) lineIndex
   ]
-
-localRootAndDirectDependency :: PackagePath -> Maybe (Package, Package)
-localRootAndDirectDependency path =
-  case unPackagePath path of
-    root : directDep : _ -> Just (root, directDep)
-    _                    -> Nothing
-
-locationValue :: FilePath -> Maybe Int -> Value
-locationValue cabalFile maybeLine =
-  Object $
-    KeyMap.fromList
-      [ ( "physicalLocation"
-        , Object $
-            KeyMap.fromList
-              [ ( "artifactLocation"
-                , Object $
-                    KeyMap.fromList
-                      [ ("uri", String (Text.pack cabalFile))
-                      ]
-                )
-              , ( "region"
-                , Object $
-                    KeyMap.fromList
-                      [ ("startLine", Aeson.toJSON (fromMaybe 1 maybeLine))
-                      , ("startColumn", Aeson.toJSON (1 :: Int))
-                      ]
-                )
-              ]
-        )
-      ]
-
-localPackageCabalFile :: Package -> FilePath -> FilePath
-localPackageCabalFile pkg path
-  | takeExtension path == ".cabal" =
-      normalise path
-
-  | otherwise =
-      normalise path </> Text.unpack (unPackageName (packageName pkg)) <> ".cabal"
-
-repoRelativePath :: FilePath -> FilePath -> FilePath
-repoRelativePath repoRoot path =
-  normalise $
-    makeRelative
-      (normalise repoRoot)
-      (normalise path)
 
 addMessageExplanation :: FindingExplanation -> KeyMap Value -> KeyMap Value
 addMessageExplanation explanation o =
