@@ -2,10 +2,13 @@
 
 module Hgs.Extract
   ( extractPlanGraph
+  , extractPlanGraphChecked
+  , PlanGraphError(..)
   , summarisePlanGraph
   ) where
 
-import Data.Foldable (foldl')
+import Control.Monad (foldM, unless)
+import Data.Foldable (foldl', traverse_)
 import Data.List (intercalate)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -24,6 +27,33 @@ import Hgs.Domain
   , UnitId(..)
   , Version(..)
   )
+
+data PlanGraphError
+  = IncompletePlanItem Int
+  | DuplicateUnit UnitId
+  | UnknownDependency UnitId UnitId
+  deriving (Eq, Show)
+
+-- Validate before extraction can discard incomplete items or unknown edges.
+extractPlanGraphChecked :: RawPlan -> Either PlanGraphError PlanGraph
+extractPlanGraphChecked plan = do
+  items <- traverse complete (zip [0..] (rawPlanItems plan))
+  known <- foldM addUnit Set.empty items
+  traverse_ (checkDependencies known) items
+  pure (extractPlanGraph plan)
+ where
+  complete (index, item) =
+    maybe (Left (IncompletePlanItem index)) Right (toCompleteItem item)
+
+  addUnit known item
+    | completeUnitId item `Set.member` known = Left (DuplicateUnit (completeUnitId item))
+    | otherwise = Right (Set.insert (completeUnitId item) known)
+
+  checkDependencies known item =
+    traverse_ (\dependency ->
+      unless (dependency `Set.member` known)
+        (Left (UnknownDependency (completeUnitId item) dependency)))
+      (completeDepends item)
 
 extractPlanGraph :: RawPlan -> PlanGraph
 extractPlanGraph rawPlan =

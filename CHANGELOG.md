@@ -95,3 +95,8 @@
 
 * Deduplicate dependency PURLs for Cabal packages with multiple library components. ([#49](https://github.com/dancewithheart/cabal-plan-submit/issues/49))
 * Merge dependency edges and preserve direct dependency classification across sublibraries.
+
+## 0.1.1.2 -- 2026-10-29
+
+* Add validation so invalid dependencies are not silently discarded.
+
