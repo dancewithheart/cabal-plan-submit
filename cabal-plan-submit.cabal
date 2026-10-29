@@ -27,6 +27,10 @@ extra-source-files:
     test/golden/persistent/sarif_enriched.json
     test/golden/cabal_plan_json/plan.json
     test/golden/cabal_plan_json/snapshot.json
+    test/golden/cabal-file-index/agda2scala.cabal
+    test/golden/cabal-file-index/agda2scala.golden
+    test/golden/cabal-file-index/persistent-mongoDB.cabal
+    test/golden/cabal-file-index/persistent-mongoDB.golden
 
 source-repository head
   type: git
@@ -68,9 +72,11 @@ executable cabal-plan-submit
       base            >=4.16 && <5
     , aeson
     , bytestring
+    , Cabal-syntax >=3.8
     , containers
     , directory
     , filepath
+    , parsec
     , text
     , time
     , vector
@@ -123,10 +129,12 @@ test-suite plan-json-test
       base            >=4.16 && <5
     , aeson
     , bytestring
+    , Cabal-syntax >=3.8
     , containers
     , directory
     , hspec
     , filepath
+    , parsec
     , QuickCheck
     , text
     , time

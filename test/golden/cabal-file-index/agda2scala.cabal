@@ -1,0 +1,155 @@
+cabal-version:   3.8
+
+-- Further docs  http://haskell.org/cabal/users-guide/
+name:            agda2scala
+
+-- See the Haskell package versioning policy (PVP) for standards
+-- https://pvp.haskell.org
+-- PVP summary:     +-+------- breaking API changes
+--                  | | +----- non-breaking API additions
+--                  | | | +--- code changes with no API change
+version:         0.1.0.4
+description:
+  Allows to export Scala source files from formal specification in Agda
+
+license:         MIT
+license-file:    LICENSE
+author:          dancewithheart
+maintainer:      piotr.paradzinski@gmail.com
+category:        Language, Compiler
+build-type:      Simple
+synopsis:        Compiling Agda code to Scala.
+extra-doc-files:
+  CHANGELOG.md
+  README.md
+
+source-repository head
+  type:     git
+  location: https://github.com/dancewithheart/agda2scala.git
+
+common warnings
+  ghc-options: -Wall
+
+library
+  import:           warnings
+  hs-source-dirs:   src
+  exposed-modules:
+    Agda.Compiler.Scala.Backend
+    Agda.Compiler.Scala.Compile
+    Agda.Compiler.Scala.Compile.Terms
+    Agda.Compiler.Scala.Compile.Types
+    Agda.Compiler.Scala.Name.NameEnv
+    Agda.Compiler.Scala.Name.NamePolicy
+    Agda.Compiler.Scala.IR.ScalaExpr
+    Agda.Compiler.Scala.IR.AgdaIR
+    Agda.Compiler.Scala.IR.ScalaIR
+    Agda.Compiler.Scala.Lower.AgdaToIR
+    Agda.Compiler.Scala.Lower.IRToScala
+    Agda.Compiler.Scala.Lower.Variance
+    Agda.Compiler.Scala.Render.Common
+    Agda.Compiler.Scala.Render.PrintScala3
+    Agda.Compiler.Scala.Render.PrintScala2
+    Agda.Compiler.Scala.Lower.Property
+    Agda.Compiler.Scala.Render.PropertyTest
+    Paths_agda2scala
+  ghc-options:
+      -Wall
+      -Wcompat
+      -Widentities
+      -Wincomplete-record-updates
+      -Wincomplete-uni-patterns
+      -Wmissing-export-lists
+      -Wmissing-home-modules
+      -Wpartial-fields
+      -Wredundant-constraints
+  autogen-modules:  Paths_agda2scala
+  build-depends:
+    , Agda                  >=2.8.0  && <2.9.0
+    , base                  >=4.13   && <4.23
+    , containers            >=0.6.0  && <0.9
+    , directory
+    , filepath
+    , deepseq               >=1.4.4  && <1.6
+    , text                  >=2.0.2  && <2.2
+    , transformers
+    , unordered-containers  >=0.2.20 && <0.3
+
+  default-language: Haskell2010
+
+executable agda2scala
+  import:           warnings
+  hs-source-dirs:   app
+  main-is:          Main.hs
+  other-modules:    Paths_agda2scala
+  ghc-options:
+      -Wall
+      -Wcompat
+      -Widentities
+      -Wincomplete-record-updates
+      -Wincomplete-uni-patterns
+      -Wmissing-export-lists
+      -Wmissing-home-modules
+      -Wpartial-fields
+      -Wredundant-constraints
+  autogen-modules:  Paths_agda2scala
+  build-depends:
+    , Agda        >=2.8.0 && <2.9.0
+    , agda2scala
+    , base        >=4.13 && <4.23
+
+  default-language: Haskell2010
+
+test-suite agda2scala-test
+  import:           warnings
+  default-language: Haskell2010
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Tests.hs
+  other-modules:
+    Compile.TypesTest
+    Lower.VarianceTest
+    Name.NameEnvTest
+    Name.NamePolicyTest
+    Render.CommonTest
+    Render.PrintScala2Test
+    Render.PrintScala3Test
+    Render.PropertyTest
+    ScalaBackendTest
+    Support.Assertions
+
+  build-depends:
+    , Agda                  >=2.8.0   && <2.9.0
+    , agda2scala
+    , base                  >=4.13 && <4.23
+    , tasty
+    , tasty-hunit
+    , transformers
+    , unordered-containers  >=0.2.20  && <0.3
+
+test-suite agda2scala-props
+  import:           warnings
+  default-language: Haskell2010
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Props.hs
+  other-modules:
+    CompileProps
+    Compile.TermsProps
+    Compile.TypesProps
+    Lower.IRToScalaProps
+    Lower.VarianceProps
+    Name.NameEnvProps
+    Name.NamePolicyProps
+    Render.PrintProps
+
+  build-depends:
+    , Agda                  >=2.8.0  && <2.9.0
+    , agda2scala
+    , base                  >=4.13   && <4.23
+    , containers            >=0.6.0  && <0.9
+    , hedgehog              >=1.4    && <1.8
+    , text                  >=2.0.2  && <2.2
+    , transformers
+    , unordered-containers  >=0.2.20 && <0.3
+
+  ghc-options:      -threaded -rtsopts
