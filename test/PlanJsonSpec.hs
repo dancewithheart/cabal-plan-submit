@@ -298,10 +298,10 @@ spec = do
         `shouldBe` Right (Just (Set.singleton (UnitId "root")))
 
     it "retains all represented edges in valid plans" $
-      property (withMaxSuccess 1000 prop_checkedPreservesEdges)
+      property (withNumTests 1000 prop_checkedPreservesEdges)
 
     it "rejects generated plans with an unknown target" $
-      property (withMaxSuccess 1000 prop_checkedRejectsUnknown)
+      property (withNumTests 1000 prop_checkedRejectsUnknown)
 
   describe "snapshotFromPlanGraph" $ do
     it "emits only external packages in resolved" $ do
