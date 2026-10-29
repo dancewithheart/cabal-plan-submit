@@ -1,0 +1,13 @@
+Agda 67
+agda2scala 97
+base 68
+containers 69
+deepseq 72
+directory 70
+filepath 71
+hedgehog 150
+tasty 124
+tasty-hunit 125
+text 73
+transformers 74
+unordered-containers 75
