@@ -40,13 +40,13 @@ jobs:
           path: cabal-audit
 
       - name: Setup Haskell
-        uses: haskell-actions/setup@v2
+        uses: haskell-actions/setup@cd0d9bdd65b20557f41bea4dbe43d0b5fbbfe553 # v2.11
         with:
           ghc-version: "9.6.7"
           cabal-version: "3.14"
 
       - name: Cache Cabal store
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cabal/store
@@ -140,14 +140,14 @@ jobs:
             > ../deprecated-packages.sarif
 
       - name: Upload enriched cabal-audit SARIF
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: cabal-audit.enriched.sarif
           category: cabal-audit-enriched
           checkout_path: project
 
       - name: Upload deprecated-package SARIF
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: deprecated-packages.sarif
           category: hackage-deprecated-packages
