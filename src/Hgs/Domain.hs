@@ -10,7 +10,10 @@ module Hgs.Domain
   , RawPlan(..)
   , RawPlanItem(..)
   , PackageSource(..)
+  , DependencyKind(..)
+  , DependencyOrigin(..)
   , Package(..)
+  , packageDepends
   , PlanGraph(..)
   , ComponentName(..)
   , RawComponent(..)
@@ -29,6 +32,7 @@ import Data.Aeson.KeyMap qualified as KeyMap
 
 import Data.Foldable (toList)
 import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Text (Text)
 
@@ -60,7 +64,9 @@ data RawPlanItem = RawPlanItem
   , rawPlanItemPkgName    :: Maybe PackageName
   , rawPlanItemPkgVersion :: Maybe Version
   , rawPlanItemDepends    :: [UnitId]
+  , rawPlanItemExeDepends :: [UnitId]
   , rawPlanItemComponents :: [RawComponent]
+  , rawPlanItemComponentName :: Maybe ComponentName
   , rawPlanItemPkgSrc     :: Maybe RawPkgSrc
   }
   deriving stock (Eq, Show)
@@ -70,16 +76,29 @@ data PackageSource
   | PackageExternal
   deriving stock (Eq, Ord, Show)
 
+-- These describe which Cabal plan field supplied the edge, not runtime scope.
+data DependencyKind = ComponentDependency | ExecutableDependency
+  deriving stock (Eq, Ord, Show)
+
+data DependencyOrigin = DependencyOrigin
+  { dependencyComponent :: Maybe ComponentName
+  , dependencyKind :: DependencyKind
+  }
+  deriving stock (Eq, Ord, Show)
+
 data Package = Package
   { packageUnitId    :: UnitId
   , packageName      :: PackageName
   , packageVersion   :: Version
   , packageSource    :: PackageSource
   , packageSourcePath :: Maybe FilePath
-  , packageDepends   :: Set UnitId
+  , packageDependencies :: Map UnitId (Set DependencyOrigin)
   , packageIsDirect  :: Bool
   }
   deriving stock (Eq, Show)
+
+packageDepends :: Package -> Set UnitId
+packageDepends = Map.keysSet . packageDependencies
 
 data PlanGraph = PlanGraph
   { planGraphPackages :: Map UnitId Package
@@ -103,26 +122,28 @@ instance FromJSON RawPkgSrc where
 instance FromJSON RawPlanItem where
   parseJSON = withObject "RawPlanItem" $ \o -> do
     topDepends <-
-      parseDependsField =<< o .:? "depends"
+      parseDependsField "depends" =<< o .:? "depends"
+    topExeDepends <-
+      parseDependsField "exe-depends" =<< o .:? "exe-depends"
     components <-
       parseComponents =<< o .:? "components"
-    let componentDepends =
-          concatMap rawComponentDepends components
     RawPlanItem
       <$> o .:? "type"
       <*> (fmap UnitId <$> o .:? "id")
       <*> (fmap PackageName <$> o .:? "pkg-name")
       <*> (fmap Version <$> o .:? "pkg-version")
-      <*> pure (topDepends <> componentDepends)
+      <*> pure topDepends
+      <*> pure topExeDepends
       <*> pure components
+      <*> (fmap ComponentName <$> o .:? "component-name")
       <*> o .:? "pkg-src"
 
-parseDependsField :: Maybe Value -> Parser [UnitId]
-parseDependsField = \case
+parseDependsField :: String -> Maybe Value -> Parser [UnitId]
+parseDependsField field = \case
     Nothing -> pure []
     Just Null -> pure []
     Just (Array xs) -> traverse parseUnitIdValue (toList xs)
-    Just _ -> fail "depends: expected array, null, or missing"
+    Just _ -> fail (field <> ": expected array, null, or missing")
 
 parseComponents :: Maybe Value -> Parser [RawComponent]
 parseComponents = \case
@@ -136,11 +157,14 @@ parseComponent (name, value) =
   case value of
     Object component -> do
       depends <-
-        parseDependsField =<< component .:? "depends"
+        parseDependsField "depends" =<< component .:? "depends"
+      exeDepends <-
+        parseDependsField "exe-depends" =<< component .:? "exe-depends"
       pure
         RawComponent
           { rawComponentName = ComponentName (Key.toText name)
           , rawComponentDepends = depends
+          , rawComponentExeDepends = exeDepends
           }
     _ -> fail "component: expected object"
 
@@ -155,5 +179,6 @@ newtype ComponentName = ComponentName { unComponentName :: Text }
 data RawComponent = RawComponent
   { rawComponentName    :: ComponentName
   , rawComponentDepends :: [UnitId]
+  , rawComponentExeDepends :: [UnitId]
   }
   deriving stock (Eq, Show)

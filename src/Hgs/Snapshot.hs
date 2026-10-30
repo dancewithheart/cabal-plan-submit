@@ -32,6 +32,7 @@ import Hgs.Domain
   , PlanGraph(..)
   , UnitId
   , Version(..)
+  , packageDepends
   )
 
 newtype Purl = Purl { unPurl :: Text }

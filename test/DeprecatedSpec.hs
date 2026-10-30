@@ -110,6 +110,8 @@ spec = do
                         , rawPlanItemPkgVersion = Just (Version "0.4.17")
                         , rawPlanItemDepends = [UnitId "old-time-1.1.1.0-oldtimehash"]
                         , rawPlanItemComponents = []
+                        , rawPlanItemExeDepends = []
+                        , rawPlanItemComponentName = Nothing
                         , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
                         }
                     , RawPlanItem
@@ -119,6 +121,8 @@ spec = do
                         , rawPlanItemPkgVersion = Just (Version "1.1.1.0")
                         , rawPlanItemDepends = []
                         , rawPlanItemComponents = []
+                        , rawPlanItemExeDepends = []
+                        , rawPlanItemComponentName = Nothing
                         , rawPlanItemPkgSrc = Nothing
                         }
                     ]

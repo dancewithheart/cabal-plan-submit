@@ -19,6 +19,7 @@ import Hgs.Domain
   , RawPlanItem(..)
   , UnitId(..)
   , Version(..)
+  , packageDepends
   )
 import Hgs.Extract (extractPlanGraph)
 import Hgs.Snapshot
@@ -169,6 +170,8 @@ mkLocal unitId deps =
     , rawPlanItemPkgVersion = Just (Version "0.1.0.0")
     , rawPlanItemDepends = deps
     , rawPlanItemComponents = []
+    , rawPlanItemExeDepends = []
+    , rawPlanItemComponentName = Nothing
     , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
     }
 
@@ -185,6 +188,8 @@ mkExternalWith unitId name version deps =
     , rawPlanItemPkgVersion = Just (Version version)
     , rawPlanItemDepends = deps
     , rawPlanItemComponents = []
+    , rawPlanItemExeDepends = []
+    , rawPlanItemComponentName = Nothing
     , rawPlanItemPkgSrc = Nothing
     }
 

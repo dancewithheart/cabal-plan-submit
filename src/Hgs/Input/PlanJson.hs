@@ -16,6 +16,7 @@ import Hgs.Domain
   ( PackageName(..)
   , RawPkgSrc(..)
   , RawPlan(..)
+  , RawComponent(..)
   , RawPlanItem(..)
   , UnitId(..)
   , Version(..)
@@ -45,9 +46,15 @@ summariseRawPlanItem item =
     , "id=" <> renderMaybeText (unUnitId <$> rawPlanItemId item)
     , "name=" <> renderMaybeText (unPackageName <$> rawPlanItemPkgName item)
     , "version=" <> renderMaybeText (unVersion <$> rawPlanItemPkgVersion item)
-    , "deps=" <> show (length (rawPlanItemDepends item))
+    , "deps=" <> show (dependencyCount item)
     , "pkg-src=" <> renderMaybeText (rawPkgSrcKind =<< rawPlanItemPkgSrc item)
     ]
 
 renderMaybeText :: Maybe Text -> String
 renderMaybeText = maybe "<missing>" Text.unpack
+
+dependencyCount :: RawPlanItem -> Int
+dependencyCount item =
+  length (rawPlanItemDepends item)
+    + length (rawPlanItemExeDepends item)
+    + sum [length (rawComponentDepends c) + length (rawComponentExeDepends c) | c <- rawPlanItemComponents item]

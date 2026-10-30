@@ -17,15 +17,17 @@ module TestSupport
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
-import Data.List (zipWith4)
+import Data.List (zipWith6)
 import Data.Text qualified as Text
 import Data.Time.Clock (UTCTime(..), secondsToDiffTime)
 import Hgs.Domain
-  ( PackageName(..)
+  ( ComponentName(..)
+  , PackageName(..)
   , PlanGraph
   , RawPkgSrc(..)
   , RawPlan(..)
   , RawPlanItem(..)
+  , RawComponent(..)
   , UnitId(..)
   , Version(..)
   )
@@ -41,15 +43,21 @@ instance Arbitrary SimplePlan where
     names <- genBaseName 20
     let unitIds = mkUnitIds names
     depLists <- vectorOf (length unitIds) (listOf (elements (unknownUnitId : unitIds)))
+    exeDepLists <- vectorOf (length unitIds) (listOf (elements (unknownUnitId : unitIds)))
     localFlags <- vectorOf (length unitIds) arbitrary
     packageNames <- vectorOf (length unitIds) (elements names)
+    componentLists <- vectorOf (length unitIds) $ do
+      hasComponent <- arbitrary
+      componentDeps <- listOf (elements (unknownUnitId : unitIds))
+      componentTools <- listOf (elements (unknownUnitId : unitIds))
+      pure [RawComponent (ComponentName "lib") componentDeps componentTools | hasComponent]
     pure $
       SimplePlan $
         RawPlan
           { rawPlanCabalVersion = Nothing
           , rawPlanCompilerId = Nothing
           , rawPlanItems =
-              zipWith4 mkItem unitIds depLists localFlags packageNames
+              zipWith6 mkItem unitIds depLists exeDepLists localFlags packageNames componentLists
           }
 
 genBaseName :: Int -> Gen [String]
@@ -62,14 +70,16 @@ mkUnitIds :: [String] -> [UnitId]
 mkUnitIds =
   map (\n -> UnitId (toText (n <> "-1.0.0")))
 
-mkItem :: UnitId -> [UnitId] -> Bool -> String -> RawPlanItem
-mkItem unitId deps isLocal name =
+mkItem :: UnitId -> [UnitId] -> [UnitId] -> Bool -> String -> [RawComponent] -> RawPlanItem
+mkItem unitId deps exeDeps isLocal name components =
   RawPlanItem
     { rawPlanItemType = Just "configured"
     , rawPlanItemId = Just unitId
     , rawPlanItemPkgName = Just (PackageName (toText name))
     , rawPlanItemPkgVersion = Just (Version "1.0.0")
-    , rawPlanItemComponents = []
+    , rawPlanItemComponents = components
+    , rawPlanItemExeDepends = exeDeps
+    , rawPlanItemComponentName = Nothing
     , rawPlanItemDepends = deps
     , rawPlanItemPkgSrc =
         if isLocal
@@ -86,6 +96,8 @@ mkLocal unitId deps =
     , rawPlanItemPkgVersion = Just (Version "0.1.0.0")
     , rawPlanItemDepends = deps
     , rawPlanItemComponents = []
+    , rawPlanItemExeDepends = []
+    , rawPlanItemComponentName = Nothing
     , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
     }
 
@@ -102,6 +114,8 @@ mkExternalWith unitId name version deps =
     , rawPlanItemPkgVersion = Just (Version version)
     , rawPlanItemDepends = deps
     , rawPlanItemComponents = []
+    , rawPlanItemExeDepends = []
+    , rawPlanItemComponentName = Nothing
     , rawPlanItemPkgSrc = Nothing
     }
 

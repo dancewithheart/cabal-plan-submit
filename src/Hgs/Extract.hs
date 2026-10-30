@@ -17,15 +17,20 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Hgs.Domain
-  ( Package(..)
+  ( ComponentName
+  , DependencyKind(..)
+  , DependencyOrigin(..)
+  , Package(..)
   , PackageName(..)
   , PackageSource(..)
   , PlanGraph(..)
   , RawPkgSrc(rawPkgSrcKind, rawPkgSrcPath)
   , RawPlan(..)
   , RawPlanItem(..)
+  , RawComponent(..)
   , UnitId(..)
   , Version(..)
+  , packageDepends
   )
 
 data PlanGraphError
@@ -40,7 +45,7 @@ extractPlanGraphChecked plan = do
   items <- traverse complete (zip [0..] (rawPlanItems plan))
   known <- foldM addUnit Set.empty items
   traverse_ (checkDependencies known) items
-  pure (extractPlanGraph plan)
+  pure (extractCompleteItems items)
  where
   complete (index, item) =
     maybe (Left (IncompletePlanItem index)) Right (toCompleteItem item)
@@ -53,19 +58,18 @@ extractPlanGraphChecked plan = do
     traverse_ (\dependency ->
       unless (dependency `Set.member` known)
         (Left (UnknownDependency (completeUnitId item) dependency)))
-      (completeDepends item)
+      (Map.keys (completeDependencies item))
 
 extractPlanGraph :: RawPlan -> PlanGraph
-extractPlanGraph rawPlan =
+extractPlanGraph rawPlan = extractCompleteItems (mapMaybe toCompleteItem (rawPlanItems rawPlan))
+
+extractCompleteItems :: [CompleteItem] -> PlanGraph
+extractCompleteItems completeItems =
   PlanGraph
     { planGraphPackages = packages
     , planGraphLocals = localUnitIds
     }
  where
-  completeItems :: [CompleteItem]
-  completeItems =
-    mapMaybe toCompleteItem (rawPlanItems rawPlan)
-
   knownUnitIds :: Set UnitId
   knownUnitIds =
     Set.fromList (map completeUnitId completeItems)
@@ -81,7 +85,7 @@ extractPlanGraph rawPlan =
   directExternalUnitIds :: Set UnitId
   directExternalUnitIds =
     Set.unions
-      [ Set.filter (`Set.notMember` localUnitIds) (completeDepends item)
+      [ Set.filter (`Set.notMember` localUnitIds) (Map.keysSet (completeDependencies item))
       | item <- completeItems
       , completeSource item == PackageLocal
       ]
@@ -96,7 +100,7 @@ extractPlanGraph rawPlan =
             , packageVersion = completeVersion item
             , packageSource = completeSource item
             , packageSourcePath = completeSourcePath item
-            , packageDepends = Set.filter (`Set.member` knownUnitIds) (completeDepends item)
+            , packageDependencies = Map.restrictKeys (completeDependencies item) knownUnitIds
             , packageIsDirect = completeUnitId item `Set.member` directExternalUnitIds
             }
         )
@@ -109,7 +113,7 @@ data CompleteItem = CompleteItem
   , completeVersion    :: Version
   , completeSource     :: PackageSource
   , completeSourcePath :: Maybe FilePath
-  , completeDepends    :: Set UnitId
+  , completeDependencies :: Map UnitId (Set DependencyOrigin)
   }
 
 toCompleteItem :: RawPlanItem -> Maybe CompleteItem
@@ -124,8 +128,24 @@ toCompleteItem item = do
       , completeVersion = version
       , completeSource = classifySource item
       , completeSourcePath = rawPkgSrcPath =<< rawPlanItemPkgSrc item
-      , completeDepends = Set.fromList (rawPlanItemDepends item)
+      , completeDependencies = dependencyOrigins item
       }
+
+dependencyOrigins :: RawPlanItem -> Map UnitId (Set DependencyOrigin)
+dependencyOrigins item =
+  Map.fromListWith Set.union $
+    edges (rawPlanItemComponentName item) ComponentDependency (rawPlanItemDepends item)
+      <> edges (rawPlanItemComponentName item) ExecutableDependency (rawPlanItemExeDepends item)
+      <> concatMap componentEdges (rawPlanItemComponents item)
+ where
+  componentEdges component =
+    let origin = Just (rawComponentName component)
+     in edges origin ComponentDependency (rawComponentDepends component)
+          <> edges origin ExecutableDependency (rawComponentExeDepends component)
+
+edges :: Maybe ComponentName -> DependencyKind -> [UnitId] -> [(UnitId, Set DependencyOrigin)]
+edges component kind =
+  map (, Set.singleton (DependencyOrigin component kind))
 
 classifySource :: RawPlanItem -> PackageSource
 classifySource item =

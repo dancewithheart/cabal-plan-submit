@@ -7,12 +7,18 @@ module PlanJsonSpec (spec) where
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.ByteString qualified as BS
 import Data.Either (isLeft, isRight)
+import Data.List (find)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
+import Data.Text qualified as Text
+import Data.Vector qualified as Vector
 import Hgs.Domain
   (
   ComponentName(..)
+  , DependencyKind(..)
+  , DependencyOrigin(..)
   , Package(..)
   , PackageName(..)
   , PackageSource(..)
@@ -23,12 +29,14 @@ import Hgs.Domain
   , RawPlanItem(..)
   , UnitId(..)
   , Version(..)
+  , packageDepends
   )
 import Hgs.Extract (PlanGraphError(..), extractPlanGraph, extractPlanGraphChecked)
 import Hgs.Input.PlanJson (decodeRawPlan)
 import Hgs.Snapshot
   ( snapshotFromPlanGraph
   )
+import Hgs.Why (shortestPathsToPackage)
 import Test.Hspec
 import Test.QuickCheck
 import TestSupport (SimplePlan(..), expectObject, mkExternalWith, mkLocal, simpleGraph, snapshotInput, valueKey)
@@ -74,6 +82,13 @@ spec = do
       case decodeRawPlan input of
         Left err -> expectationFailure err
         Right plan -> length (rawPlanItems plan) `shouldBe` 1
+
+    it "rejects malformed top-level and component executable dependencies" $ do
+      let invalid =
+            [ "{\"install-plan\":[{\"exe-depends\":\"wrong\"}]}"
+            , "{\"install-plan\":[{\"components\":{\"lib\":{\"exe-depends\":[42]}}}]}"
+            ]
+      map decodeRawPlan invalid `shouldSatisfy` all isLeft
 
     it "preserves component names and component dependency sets" $ do
       let input =
@@ -137,6 +152,8 @@ spec = do
               , rawPlanItemPkgVersion = Just (Version "1")
               , rawPlanItemDepends = []
               , rawPlanItemComponents = []
+              , rawPlanItemExeDepends = []
+              , rawPlanItemComponentName = Nothing
               , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "packages/local"))
               }
           plan = RawPlan Nothing Nothing [local]
@@ -225,6 +242,8 @@ spec = do
               , rawPlanItemPkgVersion = Just (Version "0.1.0.0")
               , rawPlanItemDepends = [UnitId "aeson-2.2.4.1", UnitId "text-2.0.2"]
               , rawPlanItemComponents = []
+              , rawPlanItemExeDepends = []
+              , rawPlanItemComponentName = Nothing
               , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
               }
 
@@ -236,6 +255,8 @@ spec = do
               , rawPlanItemPkgVersion = Just (Version "2.2.4.1")
               , rawPlanItemDepends = [UnitId "bytestring-0.11.5.3", UnitId "text-2.0.2"]
               , rawPlanItemComponents = []
+              , rawPlanItemExeDepends = []
+              , rawPlanItemComponentName = Nothing
               , rawPlanItemPkgSrc = Nothing
               }
 
@@ -247,6 +268,8 @@ spec = do
               , rawPlanItemPkgVersion = Just (Version "2.0.2")
               , rawPlanItemDepends = [UnitId "bytestring-0.11.5.3"]
               , rawPlanItemComponents = []
+              , rawPlanItemExeDepends = []
+              , rawPlanItemComponentName = Nothing
               , rawPlanItemPkgSrc = Nothing
               }
 
@@ -258,6 +281,8 @@ spec = do
               , rawPlanItemPkgVersion = Just (Version "0.11.5.3")
               , rawPlanItemDepends = []
               , rawPlanItemComponents = []
+              , rawPlanItemExeDepends = []
+              , rawPlanItemComponentName = Nothing
               , rawPlanItemPkgSrc = Nothing
               }
 
@@ -295,6 +320,27 @@ spec = do
       extractPlanGraphChecked (plan [root [UnitId "missing"]])
         `shouldBe` Left (UnknownDependency (UnitId "root") (UnitId "missing"))
 
+    it "rejects a dangling executable dependency" $
+      extractPlanGraphChecked (plan [(root []) { rawPlanItemExeDepends = [UnitId "missing"] }])
+        `shouldBe` Left (UnknownDependency (UnitId "root") (UnitId "missing"))
+
+    it "retains every kind and component when an edge has multiple origins" $ do
+      let item = (root [UnitId "dep"])
+            { rawPlanItemExeDepends = [UnitId "dep"]
+            , rawPlanItemComponents = [RawComponent (ComponentName "test:spec") [UnitId "dep"] [UnitId "dep"]]
+            }
+          result = extractPlanGraphChecked (plan [item, dependency []])
+          origins graph = do
+            pkg <- Map.lookup (UnitId "root") (planGraphPackages graph)
+            Map.lookup (UnitId "dep") (packageDependencies pkg)
+      fmap origins result
+        `shouldBe` Right (Just (Set.fromList
+          [ DependencyOrigin Nothing ComponentDependency
+          , DependencyOrigin Nothing ExecutableDependency
+          , DependencyOrigin (Just (ComponentName "test:spec")) ComponentDependency
+          , DependencyOrigin (Just (ComponentName "test:spec")) ExecutableDependency
+          ]))
+
     it "rejects incomplete records and duplicate unit identities" $ do
       extractPlanGraphChecked (plan [(root []) { rawPlanItemPkgVersion = Nothing }])
         `shouldBe` Left (IncompletePlanItem 0)
@@ -309,10 +355,41 @@ spec = do
         `shouldBe` Right (Just (Set.singleton (UnitId "root")))
 
     it "retains all represented edges in valid plans" $
-      property (withNumTests 1000 prop_checkedPreservesEdges)
+      property (withMaxSuccess 1000 prop_checkedPreservesEdges)
 
     it "rejects generated plans with an unknown target" $
-      property (withNumTests 1000 prop_checkedRejectsUnknown)
+      property (withMaxSuccess 1000 prop_checkedRejectsUnknown)
+
+  describe "real Cabal executable dependencies" $ do
+    it "links local unix-time to its hsc2hs build tool" $ do
+      graph <- graphFromFixture "test/golden/unix-time/plan.json"
+      let root = packageNamed "unix-time" graph
+          tool = packageNamed "hsc2hs" graph
+      packageUnitId tool `Set.member` packageDepends root `shouldBe` True
+      packageIsDirect tool `shouldBe` True
+      Map.lookup (packageUnitId tool) (packageDependencies root)
+        `shouldBe` Just (Set.singleton (DependencyOrigin (Just (ComponentName "lib")) ExecutableDependency))
+      shortestPathsToPackage (PackageName "hsc2hs") graph `shouldSatisfy` (not . null)
+
+    it "links persistent's network library to hsc2hs" $ do
+      graph <- graphFromFixture "test/golden/persistent/plan.json"
+      let network = packageNamed "network" graph
+          tool = packageNamed "hsc2hs" graph
+      packageUnitId tool `Set.member` packageDepends network `shouldBe` True
+      let snapshot = Aeson.toJSON (snapshotFromPlanGraph snapshotInput graph)
+          resolved = valueKey "resolved" (valueKey "cabal-project" (valueKey "manifests" snapshot))
+          networkPurl = "pkg:hackage/network@" <> unVersion (packageVersion network)
+          entry = valueKey networkPurl resolved
+      case valueKey "dependencies" entry of
+        Aeson.Array dependencies -> Vector.toList dependencies `shouldContain` [Aeson.String "pkg:hackage/hsc2hs@0.68.10"]
+        _ -> expectationFailure "expected network dependencies array"
+
+    it "retains setup-component provenance from persistent's entropy package" $ do
+      graph <- graphFromFixture "test/golden/persistent/plan.json"
+      let entropy = packageNamed "entropy" graph
+          cabal = packageNamed "Cabal" graph
+      Map.lookup (packageUnitId cabal) (packageDependencies entropy)
+        `shouldBe` Just (Set.singleton (DependencyOrigin (Just (ComponentName "setup")) ComponentDependency))
 
   describe "snapshotFromPlanGraph" $ do
     it "emits only external packages in resolved" $ do
@@ -335,12 +412,52 @@ prop_checkedPreservesEdges (SimplePlan raw) =
       Map.keysSet (planGraphPackages graph) == known && all (preserved graph) items
  where
   known = Set.fromList [uid | item <- rawPlanItems raw, Just uid <- [rawPlanItemId item]]
-  items = [item {rawPlanItemDepends = filter (`Set.member` known) (rawPlanItemDepends item)} | item <- rawPlanItems raw]
+  items = map keepKnown (rawPlanItems raw)
+  keepKnown item = item
+    { rawPlanItemDepends = onlyKnown (rawPlanItemDepends item)
+    , rawPlanItemExeDepends = onlyKnown (rawPlanItemExeDepends item)
+    , rawPlanItemComponents = map keepKnownComponent (rawPlanItemComponents item)
+    }
+  keepKnownComponent component = component
+    { rawComponentDepends = onlyKnown (rawComponentDepends component)
+    , rawComponentExeDepends = onlyKnown (rawComponentExeDepends component)
+    }
+  onlyKnown = filter (`Set.member` known)
   valid = raw {rawPlanItems = items}
   preserved graph item =
     case rawPlanItemId item of
       Nothing -> False
-      Just uid -> fmap packageDepends (Map.lookup uid (planGraphPackages graph)) == Just (Set.fromList (rawPlanItemDepends item))
+      Just uid -> case Map.lookup uid (planGraphPackages graph) of
+        Nothing -> False
+        Just pkg ->
+          let expected = Set.fromList (itemOrigins item)
+              actual = Set.fromList
+                [(dependency, origin) | (dependency, origins) <- Map.toList (packageDependencies pkg), origin <- Set.toList origins]
+           in actual == expected
+
+itemOrigins :: RawPlanItem -> [(UnitId, DependencyOrigin)]
+itemOrigins item =
+  withOrigin (rawPlanItemComponentName item) ComponentDependency (rawPlanItemDepends item)
+    <> withOrigin (rawPlanItemComponentName item) ExecutableDependency (rawPlanItemExeDepends item)
+    <> concatMap componentOrigins (rawPlanItemComponents item)
+ where
+  componentOrigins component =
+    withOrigin (Just (rawComponentName component)) ComponentDependency (rawComponentDepends component)
+      <> withOrigin (Just (rawComponentName component)) ExecutableDependency (rawComponentExeDepends component)
+  withOrigin component kind = map (, DependencyOrigin component kind)
+
+graphFromFixture :: FilePath -> IO PlanGraph
+graphFromFixture path = do
+  bytes <- BS.readFile path
+  case decodeRawPlan bytes >>= either (Left . show) Right . extractPlanGraphChecked of
+    Left err -> expectationFailure err *> fail "invalid plan fixture"
+    Right graph -> pure graph
+
+packageNamed :: Text.Text -> PlanGraph -> Package
+packageNamed name graph =
+  case find ((== PackageName name) . packageName) (Map.elems (planGraphPackages graph)) of
+    Just pkg -> pkg
+    Nothing -> error ("package not found in fixture: " <> Text.unpack name)
 
 prop_checkedRejectsUnknown :: SimplePlan -> Bool
 prop_checkedRejectsUnknown (SimplePlan raw) =

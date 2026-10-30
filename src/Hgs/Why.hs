@@ -23,6 +23,7 @@ import Hgs.Domain
   , PackageSource(..)
   , PlanGraph(..)
   , UnitId
+  , packageDepends
   )
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter(..)
