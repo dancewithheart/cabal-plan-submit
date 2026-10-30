@@ -95,6 +95,7 @@ extractCompleteItems completeItems =
             , packageVersion = completeVersion item
             , packageSource = completeSource item
             , packageSourcePath = completeSourcePath item
+            , packageComponentName = completeComponentName item
             , packageDependencies = completeDependencies item
             , packageIsDirect = completeUnitId item `Set.member` directExternalUnitIds
             }
@@ -108,6 +109,7 @@ data CompleteItem = CompleteItem
   , completeVersion    :: Version
   , completeSource     :: PackageSource
   , completeSourcePath :: Maybe FilePath
+  , completeComponentName :: Maybe ComponentName
   , completeDependencies :: Map UnitId (Set DependencyOrigin)
   }
 
@@ -123,6 +125,7 @@ toCompleteItem item = do
       , completeVersion = version
       , completeSource = classifySource item
       , completeSourcePath = rawPkgSrcPath =<< rawPlanItemPkgSrc item
+      , completeComponentName = rawPlanItemComponentName item
       , completeDependencies = dependencyOrigins item
       }
 

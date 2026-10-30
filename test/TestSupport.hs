@@ -51,7 +51,8 @@ instance Arbitrary SimplePlan where
       hasComponent <- arbitrary
       componentDeps <- listOf (elements unitIds)
       componentTools <- listOf (elements unitIds)
-      pure [RawComponent (ComponentName "lib") componentDeps componentTools | hasComponent]
+      componentName <- elements ["lib", "test:spec", "bench:speed"]
+      pure [RawComponent (ComponentName componentName) componentDeps componentTools | hasComponent]
     pure $
       SimplePlan $
         RawPlan

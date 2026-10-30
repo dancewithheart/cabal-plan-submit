@@ -33,10 +33,11 @@ import Hgs.Domain
   )
 import Hgs.Extract (PlanGraphError(..), extractPlanGraph, extractPlanGraphChecked)
 import Hgs.Input.PlanJson (decodeRawPlan)
+import Hgs.LocalUnitFilter (LocalUnitFilter(..), localUnitAllowed)
 import Hgs.Snapshot
   ( snapshotFromPlanGraph
   )
-import Hgs.Why (shortestPathsToPackage)
+import Hgs.Why (shortestPathsToPackage, shortestPathsToPackageFrom)
 import Test.Hspec
 import Test.QuickCheck
 import TestSupport (graphFromValidPlan, SimplePlan(..), expectObject, mkExternalWith, mkLocal, simpleGraph, snapshotInput, valueKey)
@@ -316,6 +317,14 @@ spec = do
     it "only accepts graphs whose dependency targets are known" $
       property prop_extractGraphKeepsKnownTargets
 
+    it "never introduces reachability when selecting production components" $
+      property prop_productionReachabilitySubset
+
+    it "retains unknown component provenance instead of hiding a possible production path" $ do
+      let root = (mkLocal "root-test" [UnitId "dep"]) {rawPlanItemComponentName = Nothing}
+          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternalWith "dep" "dep" "1" []])
+      shortestPathsToPackageFrom ProductionLocalUnits (PackageName "dep") graph `shouldSatisfy` (not . null)
+
   describe "extractPlanGraphChecked" $ do
     let plan = RawPlan Nothing Nothing
         root = mkLocal "root"
@@ -400,14 +409,26 @@ spec = do
     it "does not claim runtime scope for unix-time's test-only hspec dependency" $ do
       graph <- graphFromFixture "test/golden/unix-time/plan.json"
       let root = packageNamed "unix-time" graph
-          hspec = packageNamed "hspec" graph
+          hspecPkg = packageNamed "hspec" graph
           snapshot = Aeson.toJSON (snapshotFromPlanGraph snapshotInput graph)
           resolved = valueKey "resolved" (valueKey "cabal-project" (valueKey "manifests" snapshot))
-          hspecPurl = "pkg:hackage/hspec@" <> unVersion (packageVersion hspec)
+          hspecPurl = "pkg:hackage/hspec@" <> unVersion (packageVersion hspecPkg)
           entry = expectObject (valueKey hspecPurl resolved)
-      Map.lookup (packageUnitId hspec) (packageDependencies root)
+      Map.lookup (packageUnitId hspecPkg) (packageDependencies root)
         `shouldBe` Just (Set.singleton (DependencyOrigin (Just (ComponentName "test:spec")) ComponentDependency))
       KeyMap.lookup "scope" entry `shouldBe` Nothing
+
+    it "excludes unix-time's test-only hspec from production paths" $ do
+      graph <- graphFromFixture "test/golden/unix-time/plan.json"
+      shortestPathsToPackageFrom AllLocalUnits (PackageName "hspec") graph `shouldSatisfy` (not . null)
+      shortestPathsToPackageFrom ProductionLocalUnits (PackageName "hspec") graph `shouldBe` []
+      shortestPathsToPackageFrom ProductionLocalUnits (PackageName "hsc2hs") graph `shouldSatisfy` (not . null)
+
+    it "recognizes a test component even when its unit id lacks a test suffix" $ do
+      graph <- graphFromFixture "test/golden/persistent/plan.json"
+      let unit = UnitId "persistent-redis-2.13.0.2-inplace-basic"
+      fmap (localUnitAllowed ProductionLocalUnits) (Map.lookup unit (planGraphPackages graph))
+        `shouldBe` Just False
 
   describe "snapshotFromPlanGraph" $ do
     it "emits only external packages in resolved" $ do
@@ -495,6 +516,16 @@ prop_extractGraphKeepsKnownTargets (SimplePlan rawPlan) =
 
   depsKnown pkg =
     packageDepends pkg `Set.isSubsetOf` known
+
+prop_productionReachabilitySubset :: SimplePlan -> Bool
+prop_productionReachabilitySubset (SimplePlan rawPlan) =
+  all includedInAll names
+ where
+  graph = graphFromValidPlan rawPlan
+  names = Set.toList (Set.fromList (map packageName (Map.elems (planGraphPackages graph))))
+  includedInAll name =
+    null (shortestPathsToPackageFrom ProductionLocalUnits name graph)
+      || not (null (shortestPathsToPackageFrom AllLocalUnits name graph))
 
 prop_snapshotDependenciesStayInsideResolved :: SimplePlan -> Bool
 prop_snapshotDependenciesStayInsideResolved (SimplePlan rawPlan) =

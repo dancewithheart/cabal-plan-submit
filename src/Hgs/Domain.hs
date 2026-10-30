@@ -92,6 +92,7 @@ data Package = Package
   , packageVersion   :: Version
   , packageSource    :: PackageSource
   , packageSourcePath :: Maybe FilePath
+  , packageComponentName :: Maybe ComponentName
   , packageDependencies :: Map UnitId (Set DependencyOrigin)
   , packageIsDirect  :: Bool
   }

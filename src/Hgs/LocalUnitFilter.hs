@@ -4,14 +4,20 @@
 module Hgs.LocalUnitFilter
   ( LocalUnitFilter(..)
   , localUnitAllowed
-  , isTestLikeUnitId
-  , isBenchLikeUnitId
+  , dependencyUnits
   ) where
 
+import Data.Map.Strict qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Hgs.Domain
-  ( Package(..)
+  ( ComponentName(..)
+  , DependencyOrigin(..)
+  , Package(..)
+  , PackageSource(..)
   , UnitId(..)
+  , packageDepends
   )
 
 data LocalUnitFilter
@@ -26,19 +32,17 @@ localUnitAllowed filterKind pkg =
       True
 
     ProductionLocalUnits ->
-      not (isTestLikeUnitId unitId || isBenchLikeUnitId unitId)
- where
-  unitId =
-    packageUnitId pkg
+      maybe True productionComponent (packageComponentName pkg)
 
-isTestLikeUnitId :: UnitId -> Bool
-isTestLikeUnitId (UnitId unitId) =
-  any (`Text.isInfixOf` unitId)
-    [ "-test"
-    , "-spec"
-    , "-specs"
-    ]
+-- Unknown component provenance is retained: omitting it could hide a
+-- production dependency. Build tools in production components remain edges.
+dependencyUnits :: LocalUnitFilter -> Package -> Set UnitId
+dependencyUnits ProductionLocalUnits pkg
+  | packageSource pkg == PackageLocal =
+      Map.keysSet $ Map.filter (any (maybe True productionComponent . dependencyComponent) . Set.toList)
+        (packageDependencies pkg)
+dependencyUnits _ pkg = packageDepends pkg
 
-isBenchLikeUnitId :: UnitId -> Bool
-isBenchLikeUnitId (UnitId unitId) =
-  "-bench" `Text.isInfixOf` unitId
+productionComponent :: ComponentName -> Bool
+productionComponent (ComponentName name) =
+  not ("test:" `Text.isPrefixOf` name || "bench:" `Text.isPrefixOf` name)
