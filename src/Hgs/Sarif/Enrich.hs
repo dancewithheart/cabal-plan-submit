@@ -231,41 +231,9 @@ relationshipFromPaths paths
 
 addExplanation :: CabalLineIndex -> FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
 addExplanation lineIndex repoRoot explanation =
-  addLevel explanation
-    . addLocations lineIndex repoRoot explanation
+  addLocations lineIndex repoRoot explanation
     . addProperties explanation
     . addMessageExplanation explanation
-
-data EffectiveSeverity
-  = EffectiveError
-  | EffectiveWarning
-  | EffectiveNote
-  deriving stock (Eq, Ord, Show)
-
-effectiveSeverity :: FindingExplanation -> EffectiveSeverity
-effectiveSeverity explanation =
-  case explainedRelationship explanation of
-    "direct"   -> EffectiveError
-    "indirect" -> EffectiveNote
-    _          -> EffectiveNote
-
-sarifLevel :: EffectiveSeverity -> Text
-sarifLevel =
-  \case
-    EffectiveError   -> "error"
-    EffectiveWarning -> "warning"
-    EffectiveNote    -> "note"
-
-problemSeverityText :: EffectiveSeverity -> Text
-problemSeverityText =
-  \case
-    EffectiveError   -> "error"
-    EffectiveWarning -> "warning"
-    EffectiveNote    -> "recommendation"
-
-addLevel :: FindingExplanation -> KeyMap Value -> KeyMap Value
-addLevel explanation =
-  KeyMap.insert "level" (String (sarifLevel (effectiveSeverity explanation)))
 
 addLocations :: CabalLineIndex -> FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
 addLocations lineIndex repoRoot explanation o =
@@ -298,25 +266,21 @@ addMessageExplanation explanation o =
       Just (String t) -> t
       _ -> ""
 
-  cvssText = resultSecuritySeverity o
-
   oldMarkdown =
     case KeyMap.lookup "markdown" oldMessage of
-      Just (String t) -> t
-      _ -> ""
+      Just (String t) -> Just t
+      _ -> Nothing
 
   message' =
-    KeyMap.insert "markdown" (String (appendExplanationMarkdown cvssText oldMarkdown explanation)) $
-      KeyMap.insert "text" (String (appendExplanationText cvssText oldText explanation)) oldMessage
+    case oldMarkdown of
+      Just markdown -> KeyMap.insert "markdown" (String (appendExplanationMarkdown markdown explanation)) messageWithText
+      Nothing -> messageWithText
 
-resultSecuritySeverity :: KeyMap Value -> Maybe Text
-resultSecuritySeverity resultObject = do
-  Object properties <- KeyMap.lookup "properties" resultObject
-  String severity <- KeyMap.lookup "security-severity" properties
-  pure severity
+  messageWithText =
+    KeyMap.insert "text" (String (appendExplanationText oldText explanation)) oldMessage
 
-appendExplanationText :: Maybe Text -> Text -> FindingExplanation -> Text
-appendExplanationText cvssText oldText explanation =
+appendExplanationText :: Text -> FindingExplanation -> Text
+appendExplanationText oldText explanation =
   Text.stripEnd oldText
     <> "\n\ncabal-plan-submit:\n"
     <> "  package: "
@@ -325,18 +289,14 @@ appendExplanationText cvssText oldText explanation =
     <> "  relationship: "
     <> explainedRelationship explanation
     <> "\n"
-    <> "  effective severity: "
-    <> problemSeverity explanation
-    <> "\n"
-    <> foldMap (\cvss -> "  advisory CVSS: " <> cvss <> "\n") cvssText
     <> "  paths:\n"
     <> Text.concat
       [ "    - " <> Text.pack (renderPackagePath path) <> "\n"
       | path <- explainedPaths explanation
       ]
 
-appendExplanationMarkdown :: Maybe Text -> Text -> FindingExplanation -> Text
-appendExplanationMarkdown cvssText oldMarkdown explanation =
+appendExplanationMarkdown :: Text -> FindingExplanation -> Text
+appendExplanationMarkdown oldMarkdown explanation =
   Text.stripEnd oldMarkdown
     <> "\n\n## cabal-plan-submit dependency path\n\n"
     <> "* package: `"
@@ -345,10 +305,6 @@ appendExplanationMarkdown cvssText oldMarkdown explanation =
     <> "* relationship: `"
     <> explainedRelationship explanation
     <> "`\n"
-    <> "* effective severity: `"
-    <> problemSeverity explanation
-    <> "`\n"
-    <> foldMap (\cvss -> "* advisory CVSS: `" <> cvss <> "`\n") cvssText
     <> "* paths:\n"
     <> Text.concat
       [ "  * `"
@@ -367,7 +323,6 @@ addProperties explanation o =
       _ -> KeyMap.empty
 
   properties' =
-    KeyMap.insert "tags" (Aeson.toJSON (mergedTags oldProperties explanation)) $
     KeyMap.union
       (KeyMap.fromList
         [ ("cabal-plan-submit.package", String (renderPackageText (explainedPackage explanation)))
@@ -378,62 +333,8 @@ addProperties explanation o =
               | path <- explainedPaths explanation
               ]
           )
-        , ("precision", String "medium")
-        , ("problem.severity", String (problemSeverity explanation))
-        , ("cabal-plan-submit.effective-severity", String (problemSeverity explanation))
         ])
       oldProperties
-
-mergedTags :: KeyMap Value -> FindingExplanation -> [Text]
-mergedTags oldProperties explanation =
-  dedupeText (oldTags oldProperties <> resultTags explanation)
-
-oldTags :: KeyMap Value -> [Text]
-oldTags oldProperties =
-  case KeyMap.lookup "tags" oldProperties of
-    Just (Array tags) ->
-      [ tag
-      | String tag <- Vector.toList tags
-      ]
-
-    _ ->
-      []
-
-resultTags :: FindingExplanation -> [Text]
-resultTags explanation =
-  [ "haskell"
-  , "cabal"
-  , "dependency"
-  , "security"
-  , "cabal-plan-submit"
-  , relationshipTag explanation
-  , effectiveSeverityTag explanation
-  ]
-
-relationshipTag :: FindingExplanation -> Text
-relationshipTag explanation =
-  case explainedRelationship explanation of
-    "direct" ->
-      "direct-dependency"
-
-    _ ->
-      "transitive-dependency"
-
-effectiveSeverityTag :: FindingExplanation -> Text
-effectiveSeverityTag explanation =
-  case effectiveSeverity explanation of
-    EffectiveError ->
-      "effective-severity-error"
-
-    EffectiveWarning ->
-      "effective-severity-warning"
-
-    EffectiveNote ->
-      "effective-severity-note"
-
-problemSeverity :: FindingExplanation -> Text
-problemSeverity =
-  problemSeverityText . effectiveSeverity
 
 adjustArrayField :: Text -> (Value -> Value) -> KeyMap Value -> KeyMap Value
 adjustArrayField field f o =
