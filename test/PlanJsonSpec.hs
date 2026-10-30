@@ -397,6 +397,18 @@ spec = do
       Map.lookup (packageUnitId cabal) (packageDependencies entropy)
         `shouldBe` Just (Set.singleton (DependencyOrigin (Just (ComponentName "setup")) ComponentDependency))
 
+    it "does not claim runtime scope for unix-time's test-only hspec dependency" $ do
+      graph <- graphFromFixture "test/golden/unix-time/plan.json"
+      let root = packageNamed "unix-time" graph
+          hspec = packageNamed "hspec" graph
+          snapshot = Aeson.toJSON (snapshotFromPlanGraph snapshotInput graph)
+          resolved = valueKey "resolved" (valueKey "cabal-project" (valueKey "manifests" snapshot))
+          hspecPurl = "pkg:hackage/hspec@" <> unVersion (packageVersion hspec)
+          entry = expectObject (valueKey hspecPurl resolved)
+      Map.lookup (packageUnitId hspec) (packageDependencies root)
+        `shouldBe` Just (Set.singleton (DependencyOrigin (Just (ComponentName "test:spec")) ComponentDependency))
+      KeyMap.lookup "scope" entry `shouldBe` Nothing
+
   describe "snapshotFromPlanGraph" $ do
     it "emits only external packages in resolved" $ do
       let graph = simpleGraph

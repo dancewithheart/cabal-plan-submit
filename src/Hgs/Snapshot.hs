@@ -87,7 +87,6 @@ data Manifest = Manifest
 data Resolved = Resolved
   { resolvedPackageUrl   :: Purl
   , resolvedRelationship :: Text
-  , resolvedScope        :: Text
   , resolvedDependencies :: [Purl]
   }
   deriving stock (Eq, Show)
@@ -174,7 +173,6 @@ resolvedFromPackage purlByUnitId externalUnitIds pkg =
     { resolvedPackageUrl = pkgPurl
     , resolvedRelationship =
         if packageIsDirect pkg then "direct" else "indirect"
-    , resolvedScope = "runtime"
     , resolvedDependencies =
         nubOrd
           [ depPurl
@@ -262,10 +260,11 @@ instance ToJSON Manifest where
 
 instance ToJSON Resolved where
   toJSON resolved =
+    -- Scope is optional. A package may be used only by tests, setup or build
+    -- tools, and merged units do not yet establish a reliable runtime scope.
     object
       [ "package_url" .= resolvedPackageUrl resolved
       , "relationship" .= resolvedRelationship resolved
-      , "scope" .= resolvedScope resolved
       , "dependencies" .= resolvedDependencies resolved
       ]
 
