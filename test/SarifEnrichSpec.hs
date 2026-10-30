@@ -79,6 +79,39 @@ spec = do
       messageText `shouldContainText` "crypton-1.1.2"
       messageText `shouldNotContainText` "cryptonite-0.30"
 
+    it "does not guess a package version from a substring in advisory text" $ do
+      let multiVersionGraph = extractPlanGraph $ RawPlan Nothing Nothing
+            [ mkLocal "root" [UnitId "process-a", UnitId "process-b"]
+            , mkExternal "process-a" "process" "1.6.1"
+            , mkExternal "process-b" "process" "1.6.10"
+            ]
+          input = sarifResult "TEST-VERSIONS" "mentioned version 1.6.10\n(process)\n"
+      firstResult (enrichSarifValue mempty AllLocalUnits multiVersionGraph input)
+        `shouldBe` firstResult input
+
+    it "does not treat unrelated result metadata as an advisory package" $ do
+      let input = Aeson.object
+            [ "runs" Aeson..= [Aeson.object
+              [ "results" Aeson..= [Aeson.object
+                [ "ruleId" Aeson..= ("TEST-METADATA" :: Text.Text)
+                , "message" Aeson..= Aeson.object ["text" Aeson..= ("unrecognized advisory" :: Text.Text)]
+                , "properties" Aeson..= Aeson.object ["note" Aeson..= ("\n(crypton)\n" :: Text.Text)]
+                ]]
+              ]]
+            ]
+      firstResult (enrichSarifValue mempty AllLocalUnits graph input) `shouldBe` firstResult input
+
+    it "treats multiple units of one package version as one package" $ do
+      let multiUnitGraph = extractPlanGraph $ RawPlan Nothing Nothing
+            [ mkLocal "root" [UnitId "shared-lib", UnitId "shared-exe"]
+            , mkExternal "shared-lib" "shared" "1.2.3"
+            , mkExternal "shared-exe" "shared" "1.2.3"
+            ]
+          input = sarifResult "TEST-UNITS" "finding\n(shared)\n"
+          result = firstResult (enrichSarifValue mempty AllLocalUnits multiUnitGraph input)
+      stringField "cabal-plan-submit.package" (objectField "properties" result)
+        `shouldBe` "shared-1.2.3"
+
     it "preserves the original severity for indirect findings" $ do
       let value = enrichSarifValue mempty AllLocalUnits graph cryptoniteSarif
           result = firstResult value
@@ -97,10 +130,10 @@ spec = do
       KeyMap.lookup "level" (firstResult value) `shouldBe` Nothing
 
     it "preserves the producer's precision, severity and tags" $ do
-      let before = objectField "properties" (firstResult cryptoniteSarif)
-          after = objectField "properties" (firstResult (enrichSarifValue mempty AllLocalUnits graph cryptoniteSarif))
-      map (`KeyMap.lookup` after) ["precision", "problem.severity", "security-severity", "tags"]
-        `shouldBe` map (`KeyMap.lookup` before) ["precision", "problem.severity", "security-severity", "tags"]
+      let originalProperties = objectField "properties" (firstResult cryptoniteSarif)
+          enrichedProperties = objectField "properties" (firstResult (enrichSarifValue mempty AllLocalUnits graph cryptoniteSarif))
+      map (`KeyMap.lookup` enrichedProperties) ["precision", "problem.severity", "security-severity", "tags"]
+        `shouldBe` map (`KeyMap.lookup` originalProperties) ["precision", "problem.severity", "security-severity", "tags"]
 
     it "does not create markdown that hides an original text-only advisory" $ do
       let result = firstResult (enrichSarifValue mempty AllLocalUnits graph cryptoniteSarif)

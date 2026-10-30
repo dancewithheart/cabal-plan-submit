@@ -29,7 +29,6 @@ import Hgs.Domain
   , PackageName(..)
   , PackageSource(..)
   , PlanGraph(..)
-  , Version(..)
   )
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter
@@ -127,39 +126,25 @@ explainResult localFilter graph result =
 
 findMentionedPackage :: PlanGraph -> Value -> PackageMatch
 findMentionedPackage graph result =
-  case exactMatches of
-    pkg : _ -> MatchedPackage pkg
-    []      -> matchMentionedNames mentionedNames
+  case candidates of
+    [] -> NoPackageMention
+    [pkg] -> MatchedPackage pkg
+    pkgs@(pkg : _) -> AmbiguousPackageMention (packageName pkg) pkgs
  where
-  haystack =
-    Text.unwords (collectStrings result)
-
   mentionedNames =
-    extractConcernedPackageNames haystack
+    extractConcernedPackageNames $
+      case result of
+        Object resultObject -> maybe "" (Text.unwords . collectStrings) (KeyMap.lookup "message" resultObject)
+        _ -> ""
 
-  candidatePackages =
-    [ pkg
+  -- Several Cabal units can represent the same package version. Conversely,
+  -- a version substring elsewhere in an advisory does not identify a unit.
+  candidates =
+    Map.elems $ Map.fromList
+      [ ((packageName pkg, packageVersion pkg), pkg)
     | pkg <- Map.elems (planGraphPackages graph)
     , packageSource pkg == PackageExternal
-    ]
-
-  exactMatches =
-    [ pkg
-    | pkg <- candidatePackages
     , packageName pkg `elem` mentionedNames
-    , unVersion (packageVersion pkg) `Text.isInfixOf` haystack
-    ]
-
-  matchMentionedNames names =
-    case concatMap packagesWithName names of
-      [] -> NoPackageMention
-      [pkg] -> MatchedPackage pkg
-      pkgs@(pkg : _) -> AmbiguousPackageMention (packageName pkg) pkgs
-
-  packagesWithName name =
-    [ pkg
-    | pkg <- candidatePackages
-    , packageName pkg == name
     ]
 
 extractConcernedPackageNames :: Text -> [PackageName]
