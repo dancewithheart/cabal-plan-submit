@@ -51,7 +51,7 @@ spec = do
     it "keeps unmatched advisories in the full enriched SARIF" $ do
       plan <- decodePlanFileOrFail "test/golden/persistent/plan.json"
       sarif <- decodeJsonFileOrFail "test/golden/persistent/sarif.json"
-      let enriched = enrichSarifValue Map.empty AllLocalUnits (extractPlanGraph plan) sarif
+      let enriched = enrichSarifValue mempty AllLocalUnits (extractPlanGraph plan) sarif
           ruleIds = map (valueOrMissing "ruleId") . sarifResults
       ruleIds enriched `shouldBe` ruleIds sarif
       ruleIds enriched `shouldContain` ["HSEC-2026-0007"]
@@ -129,7 +129,7 @@ renderEnrichedSarifProjection planPath sarifPath = do
 
   let enriched =
         enrichSarifValue
-          Map.empty
+          mempty
           AllLocalUnits
           (extractPlanGraph plan)
           sarif
@@ -143,7 +143,7 @@ renderEnrichedSarif planPath sarifPath = do
 
   let enriched =
         enrichSarifValue
-          Map.empty
+          mempty
           AllLocalUnits
           (extractPlanGraph plan)
           sarif

@@ -326,7 +326,8 @@ spec = do
 
     it "retains every kind and component when an edge has multiple origins" $ do
       let item = (root [UnitId "dep"])
-            { rawPlanItemExeDepends = [UnitId "dep"]
+            { rawPlanItemComponentName = Nothing
+            , rawPlanItemExeDepends = [UnitId "dep"]
             , rawPlanItemComponents = [RawComponent (ComponentName "test:spec") [UnitId "dep"] [UnitId "dep"]]
             }
           result = extractPlanGraphChecked (plan [item, dependency []])

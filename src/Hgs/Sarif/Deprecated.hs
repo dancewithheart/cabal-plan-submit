@@ -8,7 +8,6 @@ module Hgs.Sarif.Deprecated
 import Data.Aeson (Value(..))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
-import Data.Map.Strict qualified as Map
 import Data.Maybe (maybeToList)
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -28,6 +27,8 @@ import Hgs.Domain
   )
 import Hgs.CabalFileIndex
   ( CabalLineIndex
+  , hasIndexedCabalFile
+  , lookupDependencyLine
   , localPackageCabalFile
   , repoRelativeCabalFile
   )
@@ -265,5 +266,6 @@ deprecatedLocations lineIndex repoRoot dep =
   , (root, directDep) <- maybeToList (localRootAndDirectDependency path)
   , sourcePath <- maybeToList (packageSourcePath root)
   , let cabalFile = repoRelativeCabalFile repoRoot (localPackageCabalFile root sourcePath)
-  , let line = Map.lookup (cabalFile, packageName directDep) lineIndex
+  , hasIndexedCabalFile lineIndex cabalFile
+  , let line = lookupDependencyLine lineIndex cabalFile root directDep
   ]

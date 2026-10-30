@@ -2,9 +2,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Hgs.CabalFileIndex
-  ( CabalLineIndex
+  ( CabalLineIndex(..)
+  , DependencyDeclaration(..)
   , buildCabalLineIndex
   , indexCabalFile
+  , lookupDependencyLine
+  , hasIndexedCabalFile
   , localPackageCabalFile
   , repoRelativeCabalFile
   , guessRepoRoot
@@ -44,17 +47,38 @@ import System.IO (hPutStrLn, stderr)
 import Text.Parsec qualified as Parsec
 
 import Hgs.Domain
-  ( Package(..)
+  ( ComponentName(..)
+  , DependencyKind(..)
+  , DependencyOrigin(..)
+  , Package(..)
   , PackageName(..)
   , PackageSource(..)
   , PlanGraph(..)
   )
 
-type CabalLineIndex = Map (FilePath, PackageName) Int
+data DependencyDeclaration = DependencyDeclaration
+  { declarationComponent :: ComponentName
+  , declarationKind :: DependencyKind
+  , declarationLine :: Int
+  }
+  deriving (Eq, Ord, Show)
+
+data CabalLineIndex = CabalLineIndex
+  { indexedCabalFiles :: Set.Set FilePath
+  , dependencyDeclarations :: Map (FilePath, PackageName) (Set.Set DependencyDeclaration)
+  }
+  deriving (Eq, Show)
+
+instance Semigroup CabalLineIndex where
+  CabalLineIndex filesA declarationsA <> CabalLineIndex filesB declarationsB =
+    CabalLineIndex (Set.union filesA filesB) (Map.unionWith Set.union declarationsA declarationsB)
+
+instance Monoid CabalLineIndex where
+  mempty = CabalLineIndex Set.empty Map.empty
 
 buildCabalLineIndex :: FilePath -> PlanGraph -> IO CabalLineIndex
 buildCabalLineIndex repoRoot graph =
-  Map.unions <$>
+  mconcat <$>
     traverse (cabalLineIndexForLocalPackage repoRoot) localPackages
  where
   localPackages =
@@ -67,7 +91,7 @@ cabalLineIndexForLocalPackage :: FilePath -> Package -> IO CabalLineIndex
 cabalLineIndexForLocalPackage repoRoot pkg =
   case packageSourcePath pkg of
     Nothing ->
-      pure Map.empty
+      pure mempty
 
     Just sourcePath -> do
       let cabalFile = localPackageCabalFile pkg sourcePath
@@ -78,11 +102,15 @@ cabalLineIndexForLocalPackage repoRoot pkg =
           case indexCabalFile repoRoot cabalFile contents of
             Left err -> do
               hPutStrLn stderr ("Cannot index " <> cabalFile <> ": " <> err)
-              pure Map.empty
+              pure (fileOnlyIndex repoRoot cabalFile)
             Right index ->
               pure index
         else
-          pure Map.empty
+          pure mempty
+
+fileOnlyIndex :: FilePath -> FilePath -> CabalLineIndex
+fileOnlyIndex repoRoot cabalFile =
+  CabalLineIndex (Set.singleton (repoRelativeCabalFile repoRoot cabalFile)) Map.empty
 
 -- The result reports malformed syntax instead of guessing a location.
 indexCabalFile :: FilePath -> FilePath -> String -> Either String CabalLineIndex
@@ -91,17 +119,33 @@ indexCabalFile repoRoot cabalFile contents = do
   commons <- commonStanzas fields
   locations <-
     if all isField fields
-      then componentLocations commons fields -- Cabal's old, sectionless syntax
+      then declarationsFor (ComponentName "lib") <$> componentLocations commons fields
       else concat <$> traverse (sectionLocations commons) fields
-  pure $
-    Map.fromListWith min
-      [ ((repoRelativeCabalFile repoRoot cabalFile, name), line)
-      | (name, line) <- locations
-      ]
+  pure $ CabalLineIndex
+    (Set.singleton relativePath)
+    (Map.fromListWith Set.union
+      [ ((relativePath, name), Set.singleton declaration) | (name, declaration) <- locations ])
+ where
+  relativePath = repoRelativeCabalFile repoRoot cabalFile
 
 type CommonStanzas = Map Text (Position, [Field Position])
-type DependencyLocation = (PackageName, Int)
+type DependencyLocation = (PackageName, DependencyKind, Int)
 type CommonImport = (Position, Text)
+
+lookupDependencyLine :: CabalLineIndex -> FilePath -> Package -> Package -> Maybe Int
+lookupDependencyLine index cabalFile root directDep = do
+  declarations <- Map.lookup (cabalFile, packageName directDep) (dependencyDeclarations index)
+  origins <- Map.lookup (packageUnitId directDep) (packageDependencies root)
+  Set.lookupMin $ Set.fromList
+    [ declarationLine declaration
+    | declaration <- Set.toList declarations
+    , origin <- Set.toList origins
+    , dependencyComponent origin == Just (declarationComponent declaration)
+    , dependencyKind origin == declarationKind declaration
+    ]
+
+hasIndexedCabalFile :: CabalLineIndex -> FilePath -> Bool
+hasIndexedCabalFile index cabalFile = cabalFile `Set.member` indexedCabalFiles index
 
 commonStanzas :: [Field Position] -> Either String CommonStanzas
 commonStanzas = foldM addCommon Map.empty
@@ -120,14 +164,34 @@ isField :: Field ann -> Bool
 isField (Field _ _) = True
 isField _ = False
 
-sectionLocations :: CommonStanzas -> Field Position -> Either String [DependencyLocation]
+sectionLocations :: CommonStanzas -> Field Position -> Either String [(PackageName, DependencyDeclaration)]
 sectionLocations commons = \case
-  Section (Name _ name) _ fields
-    | name `elem` ["library", "foreign-library", "executable", "test-suite", "benchmark"] ->
-        componentLocations commons fields
+  Section (Name _ name) args fields
     | name == "custom-setup" ->
-        concat <$> traverse setupLocations fields
+        declarationsFor (ComponentName "setup") . concat <$> traverse setupLocations fields
+    | Just component <- sectionComponent name args ->
+        declarationsFor component <$> componentLocations commons fields
   _ -> Right []
+
+declarationsFor :: ComponentName -> [DependencyLocation] -> [(PackageName, DependencyDeclaration)]
+declarationsFor component = map (\(name, kind, line) -> (name, DependencyDeclaration component kind line))
+
+sectionComponent :: BS8.ByteString -> [SectionArg Position] -> Maybe ComponentName
+sectionComponent "library" [] = Just (ComponentName "lib")
+sectionComponent name [arg] = do
+  prefix <- case name of
+    "library" -> Just "lib:"
+    "foreign-library" -> Just "flib:"
+    "executable" -> Just "exe:"
+    "test-suite" -> Just "test:"
+    "benchmark" -> Just "bench:"
+    _ -> Nothing
+  component <- case arg of
+    SecArgName _ value -> Just (Text.decodeUtf8 value)
+    SecArgStr _ value -> Just (Text.decodeUtf8 value)
+    _ -> Nothing
+  pure (ComponentName (prefix <> component))
+sectionComponent _ _ = Nothing
 
 -- Cabal accepts imports at the beginning of a component, common stanza, or
 -- conditional branch. Unimported common stanzas are not dependencies.
@@ -168,18 +232,21 @@ commonImports _ = Right []
 componentFieldLocations :: Field Position -> Either String ([DependencyLocation], [CommonImport])
 componentFieldLocations = \case
   Field name@(Name _ "build-depends") fieldLines ->
-    (,[]) <$> dependencyLocations name fieldLines (Cabal.parsec :: Cabal.ParsecParser Dependency.Dependency) Dependency.depPkgName
+    (,[]) . map (withKind ComponentDependency) <$> dependencyLocations name fieldLines (Cabal.parsec :: Cabal.ParsecParser Dependency.Dependency) Dependency.depPkgName
   Field name@(Name _ "build-tool-depends") fieldLines ->
-    (,[]) <$> dependencyLocations name fieldLines (Cabal.parsec :: Cabal.ParsecParser ExeDependency.ExeDependency) exePackage
-  Section (Name _ name) _ fields | name `elem` ["if", "elif", "else"] ->
-    componentFields fields
+    (,[]) . map (withKind ExecutableDependency) <$> dependencyLocations name fieldLines (Cabal.parsec :: Cabal.ParsecParser ExeDependency.ExeDependency) exePackage
+  -- A plan edge alone does not say which condition made a declaration active.
+  -- Until the condition is evaluated against the plan, omit these candidates.
   _ -> Right ([], [])
  where
   exePackage (ExeDependency.ExeDependency package _ _) = package
 
+withKind :: DependencyKind -> (PackageName, Int) -> DependencyLocation
+withKind kind (name, line) = (name, kind, line)
+
 setupLocations :: Field Position -> Either String [DependencyLocation]
 setupLocations (Field name@(Name _ "setup-depends") fieldLines) =
-  dependencyLocations name fieldLines (Cabal.parsec :: Cabal.ParsecParser Dependency.Dependency) Dependency.depPkgName
+  map (withKind ComponentDependency) <$> dependencyLocations name fieldLines (Cabal.parsec :: Cabal.ParsecParser Dependency.Dependency) Dependency.depPkgName
 setupLocations _ = Right []
 
 dependencyLocations
@@ -187,7 +254,7 @@ dependencyLocations
   -> [FieldLine Position]
   -> Cabal.ParsecParser a
   -> (a -> CabalPackage.PackageName)
-  -> Either String [DependencyLocation]
+  -> Either String [(PackageName, Int)]
 dependencyLocations name fieldLines dependencyParser packageName = do
   dependencies <- parseField name fieldLines (Cabal.parsecLeadingCommaList locatedDependency)
   traverse sourceLocation dependencies

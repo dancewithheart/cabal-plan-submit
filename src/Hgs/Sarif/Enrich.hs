@@ -42,6 +42,8 @@ import Hgs.Why (shortestPathsToPackageFrom)
 import Hgs.PrettyPrint (renderPackageText)
 import Hgs.CabalFileIndex
   ( CabalLineIndex
+  , hasIndexedCabalFile
+  , lookupDependencyLine
   , localPackageCabalFile
   , repoRelativeCabalFile
   )
@@ -92,7 +94,7 @@ enrichResult lineIndex repoRoot localFilter graph result =
     Object o ->
       case explainResult localFilter graph result of
         Nothing ->
-          Object (repairRootLocations repoRoot graph o)
+          Object o
 
         Just explanation ->
           Object (addExplanation lineIndex repoRoot explanation o)
@@ -278,7 +280,8 @@ explanationLocations lineIndex repoRoot explanation =
   , (root, directDep) <- maybeToList (localRootAndDirectDependency path)
   , sourcePath <- maybeToList (packageSourcePath root)
   , let cabalFile = repoRelativeCabalFile repoRoot (localPackageCabalFile root sourcePath)
-  , let line = Map.lookup (cabalFile, packageName directDep) lineIndex
+  , hasIndexedCabalFile lineIndex cabalFile
+  , let line = lookupDependencyLine lineIndex cabalFile root directDep
   ]
 
 addMessageExplanation :: FindingExplanation -> KeyMap Value -> KeyMap Value
@@ -450,78 +453,6 @@ collectStrings =
     Number _ -> []
     Bool _ -> []
     Null -> []
-
-repairRootLocations :: FilePath -> PlanGraph -> KeyMap Value -> KeyMap Value
-repairRootLocations repoRoot graph o =
-  case KeyMap.lookup "locations" o of
-    Just (Array locations) ->
-      KeyMap.insert
-        "locations"
-        (Array (Vector.map (repairLocation repoRoot graph) locations))
-        o
-
-    _ ->
-      o
-
-repairLocation :: FilePath -> PlanGraph -> Value -> Value
-repairLocation repoRoot graph =
-  \case
-    Object location ->
-      Object (repairPhysicalLocation repoRoot graph location)
-
-    other ->
-      other
-
-repairPhysicalLocation :: FilePath -> PlanGraph -> KeyMap Value -> KeyMap Value
-repairPhysicalLocation repoRoot graph location =
-  case KeyMap.lookup "physicalLocation" location of
-    Just (Object physicalLocation) ->
-      KeyMap.insert
-        "physicalLocation"
-        (Object (repairPhysicalLocationObject repoRoot graph physicalLocation))
-        location
-
-    _ ->
-      location
-
-repairPhysicalLocationObject :: FilePath -> PlanGraph -> KeyMap Value -> KeyMap Value
-repairPhysicalLocationObject repoRoot graph physicalLocation =
-  case KeyMap.lookup "artifactLocation" physicalLocation of
-    Just (Object artifactLocation)
-      | isProjectRootArtifact repoRoot artifactLocation ->
-          KeyMap.insert
-            "artifactLocation"
-            (Object (KeyMap.insert "uri" (String (Text.pack (fallbackManifestPath graph))) artifactLocation))
-            (KeyMap.insert "region" defaultRegion physicalLocation)
-
-    _ ->
-      physicalLocation
-
-isProjectRootArtifact :: FilePath -> KeyMap Value -> Bool
-isProjectRootArtifact repoRoot artifactLocation =
-  case KeyMap.lookup "uri" artifactLocation of
-    Just (String uri) ->
-      normalise (uriToPath uri) == normalise repoRoot
-
-    _ ->
-      False
-
-fallbackManifestPath :: PlanGraph -> FilePath
-fallbackManifestPath graph =
-  case rootLocalPackages graph of
-    root : _ ->
-      Text.unpack (unPackageName (packageName root)) <> ".cabal"
-
-    [] ->
-      "cabal.project"
-
-defaultRegion :: Value
-defaultRegion =
-  Object $
-    KeyMap.fromList
-      [ ("startLine", Aeson.toJSON (1 :: Int))
-      , ("startColumn", Aeson.toJSON (1 :: Int))
-      ]
 
 sarifRunRoot :: KeyMap Value -> Maybe FilePath
 sarifRunRoot run =

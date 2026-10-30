@@ -6,16 +6,18 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Foldable (toList)
-import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Hgs.Domain
   ( PlanGraph,
     RawPlan(..)
+  , RawPkgSrc(..)
+  , RawPlanItem(..)
   , UnitId(..)
   )
 import Hgs.Extract (extractPlanGraph)
 import Hgs.LocalUnitFilter (LocalUnitFilter(..))
 import Hgs.Sarif.Enrich (enrichSarifValue)
+import Hgs.Sarif.Common (locationValue)
 import Test.Hspec
 import TestSupport
   ( mkExternal
@@ -27,9 +29,24 @@ import TestSupport
 spec :: Spec
 spec = do
   describe "enrichSarifValue" $ do
+    it "omits a region when the dependency line is unknown" $ do
+      let physical = objectField "physicalLocation" (expectLocation (locationValue "root.cabal" Nothing))
+      KeyMap.lookup "region" physical `shouldBe` Nothing
+
+    it "preserves an unmatched finding's original location" $ do
+      let root = (mkLocal "root" []) { rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "/repo")) }
+          rootGraph = extractPlanGraph (RawPlan Nothing Nothing [root])
+          original = sarifResult "UNRESOLVED" "unrecognized advisory"
+          enriched = enrichSarifValue mempty AllLocalUnits rootGraph original
+      firstResult enriched `shouldBe` firstResult original
+
+    it "does not invent a cabal file when none was found" $ do
+      let enriched = enrichSarifValue mempty AllLocalUnits graph cryptoniteSarif
+      KeyMap.lookup "locations" (firstResult enriched)
+        `shouldBe` KeyMap.lookup "locations" (firstResult cryptoniteSarif)
     it "enriches cabal-audit result with dependency path" $ do
       let value =
-            enrichSarifValue Map.empty AllLocalUnits graph cryptoniteSarif
+            enrichSarifValue mempty AllLocalUnits graph cryptoniteSarif
 
           result =
             firstResult value
@@ -51,7 +68,7 @@ spec = do
 
     it "does not confuse crypton with cryptonite" $ do
       let value =
-            enrichSarifValue Map.empty AllLocalUnits graph cryptonSarif
+            enrichSarifValue mempty AllLocalUnits graph cryptonSarif
 
           result =
             firstResult value
@@ -63,13 +80,13 @@ spec = do
       messageText `shouldNotContainText` "cryptonite-0.30"
 
     it "preserves rule id while setting effective SARIF level" $ do
-      let value = enrichSarifValue Map.empty AllLocalUnits graph cryptoniteSarif
+      let value = enrichSarifValue mempty AllLocalUnits graph cryptoniteSarif
           result = firstResult value
       stringField "ruleId" result `shouldBe` "HSEC-2025-0002"
       stringField "level" result `shouldBe` "note"
 
     it "marks direct dependency findings as error" $ do
-      let value = enrichSarifValue Map.empty AllLocalUnits graph cryptonSarif
+      let value = enrichSarifValue mempty AllLocalUnits graph cryptonSarif
           result = firstResult value
       stringField "level" result `shouldBe` "error"
 
@@ -181,3 +198,7 @@ shouldContainText actual expected =
 shouldNotContainText :: Text.Text -> Text.Text -> Expectation
 shouldNotContainText actual expected =
   Text.unpack actual `shouldNotContain` Text.unpack expected
+
+expectLocation :: Aeson.Value -> KeyMap.KeyMap Aeson.Value
+expectLocation (Aeson.Object location) = location
+expectLocation _ = error "expected location object"

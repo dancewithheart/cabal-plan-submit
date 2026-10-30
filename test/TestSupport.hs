@@ -97,7 +97,7 @@ mkLocal unitId deps =
     , rawPlanItemDepends = deps
     , rawPlanItemComponents = []
     , rawPlanItemExeDepends = []
-    , rawPlanItemComponentName = Nothing
+    , rawPlanItemComponentName = Just (ComponentName "lib")
     , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
     }
 
