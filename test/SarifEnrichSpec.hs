@@ -14,13 +14,13 @@ import Hgs.Domain
   , RawPlanItem(..)
   , UnitId(..)
   )
-import Hgs.Extract (extractPlanGraph)
 import Hgs.LocalUnitFilter (LocalUnitFilter(..))
 import Hgs.Sarif.Enrich (enrichSarifValue)
 import Hgs.Sarif.Common (locationValue)
 import Test.Hspec
 import TestSupport
-  ( mkExternal
+  ( graphFromValidPlan
+  , mkExternal
   , mkExternalWith
   , mkLocal
   , valueKey
@@ -35,7 +35,7 @@ spec = do
 
     it "preserves an unmatched finding's original location" $ do
       let root = (mkLocal "root" []) { rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "/repo")) }
-          rootGraph = extractPlanGraph (RawPlan Nothing Nothing [root])
+          rootGraph = graphFromValidPlan (RawPlan Nothing Nothing [root])
           original = sarifResult "UNRESOLVED" "unrecognized advisory"
           enriched = enrichSarifValue mempty AllLocalUnits rootGraph original
       firstResult enriched `shouldBe` firstResult original
@@ -80,7 +80,7 @@ spec = do
       messageText `shouldNotContainText` "cryptonite-0.30"
 
     it "does not guess a package version from a substring in advisory text" $ do
-      let multiVersionGraph = extractPlanGraph $ RawPlan Nothing Nothing
+      let multiVersionGraph = graphFromValidPlan $ RawPlan Nothing Nothing
             [ mkLocal "root" [UnitId "process-a", UnitId "process-b"]
             , mkExternal "process-a" "process" "1.6.1"
             , mkExternal "process-b" "process" "1.6.10"
@@ -102,7 +102,7 @@ spec = do
       firstResult (enrichSarifValue mempty AllLocalUnits graph input) `shouldBe` firstResult input
 
     it "treats multiple units of one package version as one package" $ do
-      let multiUnitGraph = extractPlanGraph $ RawPlan Nothing Nothing
+      let multiUnitGraph = graphFromValidPlan $ RawPlan Nothing Nothing
             [ mkLocal "root" [UnitId "shared-lib", UnitId "shared-exe"]
             , mkExternal "shared-lib" "shared" "1.2.3"
             , mkExternal "shared-exe" "shared" "1.2.3"
@@ -143,7 +143,7 @@ spec = do
 
 graph :: Hgs.Domain.PlanGraph
 graph =
-  extractPlanGraph $
+  graphFromValidPlan $
     RawPlan
       { rawPlanCabalVersion = Nothing
       , rawPlanCompilerId = Nothing

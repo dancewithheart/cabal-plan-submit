@@ -6,6 +6,7 @@ module TestSupport
   ( SimplePlan(..)
   , snapshotInput
   , simpleGraph
+  , graphFromValidPlan
   , mkLocal
   , mkExternal
   , mkExternalWith
@@ -42,14 +43,14 @@ instance Arbitrary SimplePlan where
   arbitrary = do
     names <- genBaseName 20
     let unitIds = mkUnitIds names
-    depLists <- vectorOf (length unitIds) (listOf (elements (unknownUnitId : unitIds)))
-    exeDepLists <- vectorOf (length unitIds) (listOf (elements (unknownUnitId : unitIds)))
+    depLists <- vectorOf (length unitIds) (listOf (elements unitIds))
+    exeDepLists <- vectorOf (length unitIds) (listOf (elements unitIds))
     localFlags <- vectorOf (length unitIds) arbitrary
     packageNames <- vectorOf (length unitIds) (elements names)
     componentLists <- vectorOf (length unitIds) $ do
       hasComponent <- arbitrary
-      componentDeps <- listOf (elements (unknownUnitId : unitIds))
-      componentTools <- listOf (elements (unknownUnitId : unitIds))
+      componentDeps <- listOf (elements unitIds)
+      componentTools <- listOf (elements unitIds)
       pure [RawComponent (ComponentName "lib") componentDeps componentTools | hasComponent]
     pure $
       SimplePlan $
@@ -119,17 +120,13 @@ mkExternalWith unitId name version deps =
     , rawPlanItemPkgSrc = Nothing
     }
 
-unknownUnitId :: UnitId
-unknownUnitId =
-  UnitId "unknown-9.9.9"
-
 toText :: String -> Text.Text
 toText =
   Text.pack
 
 simpleGraph :: PlanGraph
 simpleGraph =
-  extractPlanGraph $
+  graphFromValidPlan $
     RawPlan
       { rawPlanCabalVersion = Nothing
       , rawPlanCompilerId = Nothing
@@ -140,6 +137,9 @@ simpleGraph =
           , mkExternal "bytestring-0.11.5.3" "bytestring" "0.11.5.3"
           ]
       }
+
+graphFromValidPlan :: RawPlan -> PlanGraph
+graphFromValidPlan = either (error . show) id . extractPlanGraph
 
 snapshotInput :: SnapshotInput
 snapshotInput =

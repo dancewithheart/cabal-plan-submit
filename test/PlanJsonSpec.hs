@@ -39,7 +39,7 @@ import Hgs.Snapshot
 import Hgs.Why (shortestPathsToPackage)
 import Test.Hspec
 import Test.QuickCheck
-import TestSupport (SimplePlan(..), expectObject, mkExternalWith, mkLocal, simpleGraph, snapshotInput, valueKey)
+import TestSupport (graphFromValidPlan, SimplePlan(..), expectObject, mkExternalWith, mkLocal, simpleGraph, snapshotInput, valueKey)
 
 spec :: Spec
 spec = do
@@ -157,7 +157,7 @@ spec = do
               , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "packages/local"))
               }
           plan = RawPlan Nothing Nothing [local]
-          packages = planGraphPackages (extractPlanGraph plan)
+          packages = planGraphPackages (graphFromValidPlan plan)
       fmap packageSourcePath (Map.lookup (UnitId "local-1") packages)
         `shouldBe` Just (Just "packages/local")
 
@@ -217,7 +217,7 @@ spec = do
         Left err ->
           expectationFailure err
         Right plan -> do
-          let graph = extractPlanGraph plan
+          let graph = graphFromValidPlan plan
               packages = planGraphPackages graph
 
           fmap packageDepends (Map.lookup (UnitId "unix-time-0.4.17-inplace") packages)
@@ -233,6 +233,11 @@ spec = do
             `shouldBe` Just True
 
   describe "extractPlanGraph" $ do
+    it "rejects an unknown build-tool edge instead of silently dropping it" $ do
+      let item = (mkLocal "root" []) {rawPlanItemExeDepends = [UnitId "missing-tool"]}
+      extractPlanGraph (RawPlan Nothing Nothing [item])
+        `shouldBe` Left (UnknownDependency (UnitId "root") (UnitId "missing-tool"))
+
     it "marks direct external dependencies from local packages" $ do
       let localPkg =
             RawPlanItem
@@ -287,7 +292,7 @@ spec = do
               }
 
           graph =
-            extractPlanGraph
+            graphFromValidPlan
               RawPlan
                 { rawPlanCabalVersion = Nothing
                 , rawPlanCompilerId = Nothing
@@ -308,7 +313,7 @@ spec = do
       fmap packageIsDirect (Map.lookup (UnitId "bytestring-0.11.5.3") packages)
         `shouldBe` Just False
 
-    it "keeps only dependency edges to known packages" $
+    it "only accepts graphs whose dependency targets are known" $
       property prop_extractGraphKeepsKnownTargets
 
   describe "extractPlanGraphChecked" $ do
@@ -473,7 +478,7 @@ prop_extractGraphKeepsKnownTargets :: SimplePlan -> Bool
 prop_extractGraphKeepsKnownTargets (SimplePlan rawPlan) =
   all depsKnown (Map.elems (planGraphPackages graph))
  where
-  graph = extractPlanGraph rawPlan
+  graph = graphFromValidPlan rawPlan
   known = Map.keysSet (planGraphPackages graph)
 
   depsKnown pkg =
@@ -483,7 +488,7 @@ prop_snapshotDependenciesStayInsideResolved :: SimplePlan -> Bool
 prop_snapshotDependenciesStayInsideResolved (SimplePlan rawPlan) =
   all depsKnown resolvedEntries
  where
-  graph = extractPlanGraph rawPlan
+  graph = graphFromValidPlan rawPlan
   value = Aeson.toJSON (snapshotFromPlanGraph snapshotInput graph)
   manifests = valueKey "manifests" value
   manifest = valueKey "cabal-project" manifests

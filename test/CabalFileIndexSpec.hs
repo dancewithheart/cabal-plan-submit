@@ -13,12 +13,11 @@ import Data.Text qualified as Text
 import Data.Vector qualified as Vector
 import Hgs.CabalFileIndex (CabalLineIndex(..), DependencyDeclaration(..), buildCabalLineIndex, indexCabalFile, lookupDependencyLine)
 import Hgs.Domain (ComponentName(..), PackageName(..), PlanGraph(..), RawComponent(..), RawPkgSrc(..), RawPlan(..), RawPlanItem(..), UnitId(..))
-import Hgs.Extract (extractPlanGraph)
 import Hgs.LocalUnitFilter (LocalUnitFilter(..))
 import Hgs.Sarif.Enrich (enrichSarifValue)
 import Test.Hspec
 import Test.QuickCheck
-import TestSupport (mkExternal, mkExternalWith, mkLocal, valueKey)
+import TestSupport (graphFromValidPlan, mkExternal, mkExternalWith, mkLocal, valueKey)
 
 spec :: Spec
 spec =
@@ -129,7 +128,7 @@ spec =
             { rawPlanItemComponentName = Nothing
             , rawPlanItemComponents = [RawComponent (ComponentName "test:spec") [UnitId "dep"] []]
             }
-          graph = extractPlanGraph (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
           pkg = planGraphPackages graph Map.! UnitId "root"
           dep = planGraphPackages graph Map.! UnitId "dep"
       fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
@@ -142,7 +141,7 @@ spec =
             , "  build-tool-depends: dep:tool"
             ]
           root = (mkLocal "root" []) {rawPlanItemExeDepends = [UnitId "dep"]}
-          graph = extractPlanGraph (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
           pkg = planGraphPackages graph Map.! UnitId "root"
           dep = planGraphPackages graph Map.! UnitId "dep"
       fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
@@ -151,7 +150,7 @@ spec =
     it "does not guess a component when the plan has no component provenance" $ do
       let contents = unlines ["library", "  build-depends: dep"]
           root = (mkLocal "root" [UnitId "dep"]) {rawPlanItemComponentName = Nothing}
-          graph = extractPlanGraph (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
           pkg = planGraphPackages graph Map.! UnitId "root"
           dep = planGraphPackages graph Map.! UnitId "dep"
       fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
@@ -200,7 +199,7 @@ spec =
             { rawPlanItemPkgName = Just (PackageName "agda2scala")
             , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just fixtureDir))
             }
-          graph = extractPlanGraph $ RawPlan Nothing Nothing
+          graph = graphFromValidPlan $ RawPlan Nothing Nothing
             [ root
             , mkExternalWith "Agda-2.8.0.2" "Agda" "2.8.0.2" [UnitId "process-1.6.18.0"]
             , mkExternal "process-1.6.18.0" "process" "1.6.18.0"
@@ -255,7 +254,7 @@ prop_resolvedComponent (component, expected) =
     , "test-suite spec", "  build-depends: dep"
     ]
   root = (mkLocal "root" [UnitId "dep"]) {rawPlanItemComponentName = Just (ComponentName component)}
-  graph = extractPlanGraph (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+  graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
   rootPkg = planGraphPackages graph Map.! UnitId "root"
   depPkg = planGraphPackages graph Map.! UnitId "dep"
 

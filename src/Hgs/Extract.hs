@@ -12,7 +12,6 @@ import Data.Foldable (foldl', traverse_)
 import Data.List (intercalate)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
@@ -60,8 +59,8 @@ extractPlanGraphChecked plan = do
         (Left (UnknownDependency (completeUnitId item) dependency)))
       (Map.keys (completeDependencies item))
 
-extractPlanGraph :: RawPlan -> PlanGraph
-extractPlanGraph rawPlan = extractCompleteItems (mapMaybe toCompleteItem (rawPlanItems rawPlan))
+extractPlanGraph :: RawPlan -> Either PlanGraphError PlanGraph
+extractPlanGraph = extractPlanGraphChecked
 
 extractCompleteItems :: [CompleteItem] -> PlanGraph
 extractCompleteItems completeItems =
@@ -70,10 +69,6 @@ extractCompleteItems completeItems =
     , planGraphLocals = localUnitIds
     }
  where
-  knownUnitIds :: Set UnitId
-  knownUnitIds =
-    Set.fromList (map completeUnitId completeItems)
-
   localUnitIds :: Set UnitId
   localUnitIds =
     Set.fromList
@@ -100,7 +95,7 @@ extractCompleteItems completeItems =
             , packageVersion = completeVersion item
             , packageSource = completeSource item
             , packageSourcePath = completeSourcePath item
-            , packageDependencies = Map.restrictKeys (completeDependencies item) knownUnitIds
+            , packageDependencies = completeDependencies item
             , packageIsDirect = completeUnitId item `Set.member` directExternalUnitIds
             }
         )
