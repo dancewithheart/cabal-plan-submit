@@ -29,7 +29,9 @@ import Hgs.Domain
   , PackageName(..)
   , PackageSource(..)
   , PlanGraph(..)
+  , Version(..)
   )
+import Hgs.DependencyUsage (Usage(..), packageUsages)
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter
   )
@@ -37,7 +39,7 @@ import Hgs.Paths
   ( PackagePath(..)
   , renderPackagePath
   )
-import Hgs.Why (shortestPathsToPackageFrom)
+import Hgs.Why (shortestPathsToPackageVersionFrom)
 import Hgs.PrettyPrint (renderPackageText)
 import Hgs.CabalFileIndex
   ( CabalLineIndex
@@ -56,96 +58,94 @@ data FindingExplanation = FindingExplanation
   { explainedPackage      :: Package
   , explainedRelationship :: Text
   , explainedPaths        :: [PackagePath]
+  , explainedUses         :: Set.Set Usage
   }
   deriving stock (Eq, Show)
 
 data PackageMatch
-  = NoPackageMention
-  | MatchedPackage Package
+  = MissingPackage PackageName
+  | MatchedPackage FindingExplanation
   | AmbiguousPackageMention PackageName [Package]
   deriving stock (Eq, Show)
+
+type UsageIndex = Map.Map (PackageName, Version) (Set.Set Usage)
 
 enrichSarifValue :: CabalLineIndex -> LocalUnitFilter -> PlanGraph -> Value -> Value
 enrichSarifValue lineIndex localFilter graph =
   \case
     Object o ->
-      Object (adjustArrayField "runs" (enrichRun lineIndex localFilter graph) o)
+      Object (adjustArrayField "runs" (enrichRun lineIndex localFilter graph usages) o)
 
     other ->
       other
+ where
+  usages = packageUsages graph
 
-enrichRun :: CabalLineIndex -> LocalUnitFilter -> PlanGraph -> Value -> Value
-enrichRun lineIndex localFilter graph =
+enrichRun :: CabalLineIndex -> LocalUnitFilter -> PlanGraph -> UsageIndex -> Value -> Value
+enrichRun lineIndex localFilter graph usages =
   \case
     Object o ->
       let repoRoot =
             fromMaybe
               (guessRepoRoot graph)
               (sarifRunRoot o)
-       in Object (adjustArrayField "results" (enrichResult lineIndex repoRoot localFilter graph) o)
+       in Object (adjustArrayField "results" (enrichResult lineIndex repoRoot localFilter graph usages) o)
 
     other ->
       other
 
-enrichResult :: CabalLineIndex -> FilePath -> LocalUnitFilter -> PlanGraph -> Value -> Value
-enrichResult lineIndex repoRoot localFilter graph result =
+enrichResult :: CabalLineIndex -> FilePath -> LocalUnitFilter -> PlanGraph -> UsageIndex -> Value -> Value
+enrichResult lineIndex repoRoot localFilter graph usages result =
   case result of
     Object o ->
-      case explainResult localFilter graph result of
-        Nothing ->
-          Object o
-
-        Just explanation ->
-          Object (addExplanation lineIndex repoRoot explanation o)
+      let matches = findMentionedPackages localFilter graph usages result
+          withMetadata = addMatchMetadata matches o
+       in Object $ case matches of
+            [MatchedPackage explanation] -> addExplanation lineIndex repoRoot explanation withMetadata
+            [] -> withMetadata
+            _ -> addMultipleExplanations lineIndex repoRoot matches withMetadata
 
     _ ->
       result
 
-explainResult :: LocalUnitFilter -> PlanGraph -> Value -> Maybe FindingExplanation
-explainResult localFilter graph result =
-  case findMentionedPackage graph result of
-    NoPackageMention -> Nothing
-    AmbiguousPackageMention _ _ -> Nothing
-    MatchedPackage pkg ->
-      let paths =
-            [ path
-            | path <- shortestPathsToPackageFrom localFilter (packageName pkg) graph
-            , pathEndsAt pkg path
-            ]
-       in case paths of
-            [] ->
-              Nothing
-
-            _ ->
-              Just
-                FindingExplanation
-                  { explainedPackage = pkg
-                  , explainedRelationship = relationshipFromPaths paths
-                  , explainedPaths = paths
-                  }
-
-findMentionedPackage :: PlanGraph -> Value -> PackageMatch
-findMentionedPackage graph result =
-  case candidates of
-    [] -> NoPackageMention
-    [pkg] -> MatchedPackage pkg
-    pkgs@(pkg : _) -> AmbiguousPackageMention (packageName pkg) pkgs
+findMentionedPackages :: LocalUnitFilter -> PlanGraph -> UsageIndex -> Value -> [PackageMatch]
+findMentionedPackages localFilter graph usages result = map match mentionedNames
  where
   mentionedNames =
     extractConcernedPackageNames $
       case result of
-        Object resultObject -> maybe "" (Text.unwords . collectStrings) (KeyMap.lookup "message" resultObject)
+        Object resultObject -> case KeyMap.lookup "message" resultObject of
+          Just (Object message) -> case KeyMap.lookup "text" message of
+            Just (String messageText) -> messageText
+            _ -> ""
+          _ -> ""
         _ -> ""
 
   -- Several Cabal units can represent the same package version. Conversely,
   -- a version substring elsewhere in an advisory does not identify a unit.
-  candidates =
+  candidates name =
     Map.elems $ Map.fromList
       [ ((packageName pkg, packageVersion pkg), pkg)
     | pkg <- Map.elems (planGraphPackages graph)
     , packageSource pkg == PackageExternal
-    , packageName pkg `elem` mentionedNames
+    , packageName pkg == name
     ]
+
+  match name = case candidates name of
+    [] -> MissingPackage name
+    [pkg] -> MatchedPackage (explainPackage localFilter graph usages pkg)
+    pkgs -> AmbiguousPackageMention name pkgs
+
+explainPackage :: LocalUnitFilter -> PlanGraph -> UsageIndex -> Package -> FindingExplanation
+explainPackage localFilter graph usages pkg =
+  FindingExplanation
+    { explainedPackage = pkg
+    , explainedRelationship = relationshipFromPaths paths
+    , explainedPaths = paths
+    , explainedUses = Map.findWithDefault Set.empty (packageName pkg, packageVersion pkg) usages
+    }
+ where
+  paths = shortestPathsToPackageVersionFrom localFilter (packageName pkg) (packageVersion pkg) graph
 
 extractConcernedPackageNames :: Text -> [PackageName]
 extractConcernedPackageNames haystack =
@@ -194,18 +194,9 @@ dedupeText =
     | otherwise =
         x : go (Set.insert x seen) xs
 
-pathEndsAt :: Package -> PackagePath -> Bool
-pathEndsAt pkg path =
-  case reverse (unPackagePath path) of
-    target : _ ->
-      packageName target == packageName pkg
-        && packageVersion target == packageVersion pkg
-
-    [] ->
-      False
-
 relationshipFromPaths :: [PackagePath] -> Text
 relationshipFromPaths paths
+  | null paths = "unknown"
   | any isDirectPath paths = "direct"
   | otherwise = "indirect"
  where
@@ -224,7 +215,15 @@ addLocations :: CabalLineIndex -> FilePath -> FindingExplanation -> KeyMap Value
 addLocations lineIndex repoRoot explanation o =
   case explanationLocations lineIndex repoRoot explanation of
     []        -> o
-    locations -> KeyMap.insert "locations" (Array (Vector.fromList locations)) o
+    locations -> replaceLocations locations o
+
+replaceLocations :: [Value] -> KeyMap Value -> KeyMap Value
+replaceLocations locations o =
+  KeyMap.insert "locations" (Array (Vector.fromList locations)) (saveOriginal o)
+ where
+  saveOriginal result = case KeyMap.lookup "locations" result of
+    Nothing -> result
+    Just original -> addPropertiesPreserving [("cabal-plan-submit.original-locations", original)] result
 
 explanationLocations :: CabalLineIndex -> FilePath -> FindingExplanation -> [Value]
 explanationLocations lineIndex repoRoot explanation =
@@ -266,7 +265,7 @@ addMessageExplanation explanation o =
 
 appendExplanationText :: Text -> FindingExplanation -> Text
 appendExplanationText oldText explanation =
-  Text.stripEnd oldText
+  oldText
     <> "\n\ncabal-plan-submit:\n"
     <> "  package: "
     <> renderPackageText (explainedPackage explanation)
@@ -274,6 +273,7 @@ appendExplanationText oldText explanation =
     <> "  relationship: "
     <> explainedRelationship explanation
     <> "\n"
+    <> "  usage: " <> renderUsages (explainedUses explanation) <> "\n"
     <> "  paths:\n"
     <> Text.concat
       [ "    - " <> Text.pack (renderPackagePath path) <> "\n"
@@ -282,7 +282,7 @@ appendExplanationText oldText explanation =
 
 appendExplanationMarkdown :: Text -> FindingExplanation -> Text
 appendExplanationMarkdown oldMarkdown explanation =
-  Text.stripEnd oldMarkdown
+  oldMarkdown
     <> "\n\n## cabal-plan-submit dependency path\n\n"
     <> "* package: `"
     <> renderPackageText (explainedPackage explanation)
@@ -290,6 +290,7 @@ appendExplanationMarkdown oldMarkdown explanation =
     <> "* relationship: `"
     <> explainedRelationship explanation
     <> "`\n"
+    <> "* usage: `" <> renderUsages (explainedUses explanation) <> "`\n"
     <> "* paths:\n"
     <> Text.concat
       [ "  * `"
@@ -300,26 +301,100 @@ appendExplanationMarkdown oldMarkdown explanation =
 
 addProperties :: FindingExplanation -> KeyMap Value -> KeyMap Value
 addProperties explanation o =
-  KeyMap.insert "properties" (Object properties') o
- where
-  oldProperties =
-    case KeyMap.lookup "properties" o of
-      Just (Object p) -> p
-      _ -> KeyMap.empty
-
-  properties' =
-    KeyMap.union
-      (KeyMap.fromList
+  addPropertiesPreserving
         [ ("cabal-plan-submit.package", String (renderPackageText (explainedPackage explanation)))
         , ("cabal-plan-submit.relationship", String (explainedRelationship explanation))
+        , ("cabal-plan-submit.usage", Aeson.toJSON (map usageName (Set.toAscList (explainedUses explanation))))
         , ( "cabal-plan-submit.paths"
           , Aeson.toJSON
               [ Text.pack (renderPackagePath path)
               | path <- explainedPaths explanation
               ]
           )
-        ])
-      oldProperties
+        ] o
+
+addPropertiesPreserving :: [(Key.Key, Value)] -> KeyMap Value -> KeyMap Value
+addPropertiesPreserving additions o = case KeyMap.lookup "properties" o of
+  Just (Object properties) -> insert properties
+  Nothing -> insert KeyMap.empty
+  Just _ -> o
+ where
+  insert properties = KeyMap.insert "properties" (Object (KeyMap.union properties (KeyMap.fromList additions))) o
+
+addMatchMetadata :: [PackageMatch] -> KeyMap Value -> KeyMap Value
+addMatchMetadata matches = addPropertiesPreserving $
+  [ ("cabal-plan-submit.match", String status)
+  , ("cabal-plan-submit.packages", Aeson.toJSON (map matchValue matches))
+  ] <> case matches of
+    [MatchedPackage _] -> []
+    _ -> [("cabal-plan-submit.relationship", String "unknown")]
+ where
+  status = case matches of
+    [] -> "unrecognized"
+    [MissingPackage _] -> "not-in-plan"
+    [AmbiguousPackageMention _ _] -> "ambiguous-version"
+    [MatchedPackage _] -> "matched"
+    _ -> "multiple-packages"
+
+matchValue :: PackageMatch -> Value
+matchValue (MissingPackage name) = Aeson.object
+  ["name" Aeson..= unPackageName name, "match" Aeson..= ("not-in-plan" :: Text)]
+matchValue (AmbiguousPackageMention name packages) = Aeson.object
+  [ "name" Aeson..= unPackageName name
+  , "match" Aeson..= ("ambiguous-version" :: Text)
+  , "versions" Aeson..= map (unVersion . packageVersion) packages
+  ]
+matchValue (MatchedPackage explanation) = Aeson.object
+  [ "name" Aeson..= unPackageName (packageName pkg)
+  , "version" Aeson..= unVersion (packageVersion pkg)
+  , "match" Aeson..= ("matched" :: Text)
+  , "relationship" Aeson..= explainedRelationship explanation
+  , "usage" Aeson..= map usageName (Set.toAscList (explainedUses explanation))
+  , "paths" Aeson..= map (Text.pack . renderPackagePath) (explainedPaths explanation)
+  ]
+ where
+  pkg = explainedPackage explanation
+
+usageName :: Usage -> Text
+usageName Production = "production-component"
+usageName Test = "test"
+usageName Benchmark = "benchmark"
+usageName Build = "build"
+usageName Unknown = "unknown"
+
+renderUsages :: Set.Set Usage -> Text
+renderUsages uses
+  | Set.null uses = "unknown"
+  | otherwise = Text.intercalate ", " (map usageName (Set.toAscList uses))
+
+addMultipleExplanations :: CabalLineIndex -> FilePath -> [PackageMatch] -> KeyMap Value -> KeyMap Value
+addMultipleExplanations lineIndex repoRoot matches = addMultiLocations . addMultiMessage
+ where
+  explanations = [explanation | MatchedPackage explanation <- matches]
+  locations = concatMap (explanationLocations lineIndex repoRoot) explanations
+  addMultiLocations result = if null locations then result else replaceLocations locations result
+  addMultiMessage result = case KeyMap.lookup "message" result of
+    Just (Object message) -> KeyMap.insert "message" (Object (appendMessages message)) result
+    _ -> result
+  appendMessages message =
+    let summary = Text.concat (map renderMatch matches)
+        add field prefix object = case KeyMap.lookup field object of
+          Just existing -> KeyMap.insert field (appendText (prefix <> summary) existing) object
+          Nothing -> object
+     in add "markdown" "\n\n## cabal-plan-submit package matches\n\n" $
+          add "text" "\n\ncabal-plan-submit package matches:\n" message
+  appendText suffix (String original) = String (original <> suffix)
+  appendText _ other = other
+
+renderMatch :: PackageMatch -> Text
+renderMatch (MissingPackage name) = "- " <> unPackageName name <> ": not in plan\n"
+renderMatch (AmbiguousPackageMention name packages) =
+  "- " <> unPackageName name <> ": ambiguous versions "
+    <> Text.intercalate ", " (map (unVersion . packageVersion) packages) <> "\n"
+renderMatch (MatchedPackage explanation) =
+  "- " <> renderPackageText (explainedPackage explanation)
+    <> ": " <> explainedRelationship explanation <> "; " <> renderUsages (explainedUses explanation) <> "\n"
+    <> Text.concat ["  - " <> Text.pack (renderPackagePath path) <> "\n" | path <- explainedPaths explanation]
 
 adjustArrayField :: Text -> (Value -> Value) -> KeyMap Value -> KeyMap Value
 adjustArrayField field f o =
@@ -329,16 +404,6 @@ adjustArrayField field f o =
 
     _ ->
       o
-
-collectStrings :: Value -> [Text]
-collectStrings =
-  \case
-    Object o -> concatMap collectStrings (KeyMap.elems o)
-    Array xs -> concatMap collectStrings (Vector.toList xs)
-    String t -> [t]
-    Number _ -> []
-    Bool _ -> []
-    Null -> []
 
 sarifRunRoot :: KeyMap Value -> Maybe FilePath
 sarifRunRoot run =

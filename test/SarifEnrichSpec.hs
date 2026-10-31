@@ -17,7 +17,9 @@ import Hgs.Domain
 import Hgs.LocalUnitFilter (LocalUnitFilter(..))
 import Hgs.Sarif.Enrich (enrichSarifValue)
 import Hgs.Sarif.Common (locationValue)
+import Hgs.CabalFileIndex (indexCabalFile)
 import Test.Hspec
+import Test.QuickCheck
 import TestSupport
   ( graphFromValidPlan
   , mkExternal
@@ -38,12 +40,20 @@ spec = do
           rootGraph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root])
           original = sarifResult "UNRESOLVED" "unrecognized advisory"
           enriched = enrichSarifValue mempty AllLocalUnits rootGraph original
-      firstResult enriched `shouldBe` firstResult original
+      KeyMap.lookup "locations" (firstResult enriched) `shouldBe` KeyMap.lookup "locations" (firstResult original)
+      stringField "cabal-plan-submit.match" (objectField "properties" (firstResult enriched)) `shouldBe` "unrecognized"
 
     it "does not invent a cabal file when none was found" $ do
       let enriched = enrichSarifValue mempty AllLocalUnits graph cryptoniteSarif
       KeyMap.lookup "locations" (firstResult enriched)
         `shouldBe` KeyMap.lookup "locations" (firstResult cryptoniteSarif)
+    it "retains producer locations in metadata when using an evidenced line" $ do
+      index <- either (\err -> expectationFailure err >> fail "invalid fixture") pure $
+        indexCabalFile "." "root.cabal" (unlines ["library", "  build-depends: crypton"])
+      let result = firstResult (enrichSarifValue index AllLocalUnits graph cryptonSarif)
+          properties = objectField "properties" result
+      KeyMap.lookup "cabal-plan-submit.original-locations" properties
+        `shouldBe` KeyMap.lookup "locations" (firstResult cryptonSarif)
     it "enriches cabal-audit result with dependency path" $ do
       let value =
             enrichSarifValue mempty AllLocalUnits graph cryptoniteSarif
@@ -86,8 +96,12 @@ spec = do
             , mkExternal "process-b" "process" "1.6.10"
             ]
           input = sarifResult "TEST-VERSIONS" "mentioned version 1.6.10\n(process)\n"
-      firstResult (enrichSarifValue mempty AllLocalUnits multiVersionGraph input)
-        `shouldBe` firstResult input
+      let result = firstResult (enrichSarifValue mempty AllLocalUnits multiVersionGraph input)
+          properties = objectField "properties" result
+      stringField "cabal-plan-submit.match" properties `shouldBe` "ambiguous-version"
+      stringField "cabal-plan-submit.relationship" properties `shouldBe` "unknown"
+      stringField "text" (objectField "message" result) `shouldContainText` "ambiguous versions 1.6.1, 1.6.10"
+      KeyMap.lookup "locations" result `shouldBe` KeyMap.lookup "locations" (firstResult input)
 
     it "does not treat unrelated result metadata as an advisory package" $ do
       let input = Aeson.object
@@ -99,7 +113,10 @@ spec = do
                 ]]
               ]]
             ]
-      firstResult (enrichSarifValue mempty AllLocalUnits graph input) `shouldBe` firstResult input
+      let result = firstResult (enrichSarifValue mempty AllLocalUnits graph input)
+      stringField "cabal-plan-submit.match" (objectField "properties" result) `shouldBe` "unrecognized"
+      KeyMap.lookup "message" result `shouldBe` KeyMap.lookup "message" (firstResult input)
+      stringField "note" (objectField "properties" result) `shouldBe` "\n(crypton)\n"
 
     it "treats multiple units of one package version as one package" $ do
       let multiUnitGraph = graphFromValidPlan $ RawPlan Nothing Nothing Nothing Nothing
@@ -140,6 +157,31 @@ spec = do
           message = objectField "message" result
       KeyMap.lookup "markdown" message `shouldBe` Nothing
       stringField "text" message `shouldContainText` "Double Public Key Signing"
+
+    it "keeps matched packages with no known path and reports their relationship as unknown" $ do
+      let disconnected = graphFromValidPlan $ RawPlan Nothing Nothing Nothing Nothing
+            [mkLocal "root" [], mkExternal "crypton" "crypton" "1.1.2"]
+          result = firstResult (enrichSarifValue mempty AllLocalUnits disconnected cryptonSarif)
+      stringField "cabal-plan-submit.package" (objectField "properties" result) `shouldBe` "crypton-1.1.2"
+      stringField "cabal-plan-submit.relationship" (objectField "properties" result) `shouldBe` "unknown"
+
+    it "preserves every producer property and original text for generated findings" $
+      property prop_preservesFinding
+
+prop_preservesFinding :: String -> Bool
+prop_preservesFinding extra =
+  let input = sarifResult "TEST-CRYPTON" (Text.pack extra <> "\n(crypton)\n")
+      original = firstResult input
+      result = firstResult (enrichSarifValue mempty AllLocalUnits graph input)
+      oldProps = objectField "properties" original
+      newProps = objectField "properties" result
+      oldText = stringField "text" (objectField "message" original)
+      newText = stringField "text" (objectField "message" result)
+   in KeyMap.lookup "ruleId" original == KeyMap.lookup "ruleId" result
+        && KeyMap.lookup "level" original == KeyMap.lookup "level" result
+        && KeyMap.lookup "locations" original == KeyMap.lookup "locations" result
+        && all (\(key, value) -> KeyMap.lookup key newProps == Just value) (KeyMap.toList oldProps)
+        && oldText `Text.isPrefixOf` newText
 
 graph :: Hgs.Domain.PlanGraph
 graph =

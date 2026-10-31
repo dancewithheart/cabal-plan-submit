@@ -48,6 +48,25 @@ import Test.Hspec
 spec :: Spec
 spec = do
   describe "SARIF result preservation" $ do
+    it "reports both packages in the real HSEC-2026-0007 result" $ do
+      plan <- decodePlanFileOrFail "test/golden/persistent/plan.json"
+      sarif <- decodeJsonFileOrFail "test/golden/persistent/sarif.json"
+      let enriched = enrichSarifValue mempty AllLocalUnits (graphFromValidPlan plan) sarif
+          findings = filter ((== "HSEC-2026-0007") . valueOrMissing "ruleId") (sarifResults enriched)
+      case findings of
+        [finding] -> do
+          let properties = expectProps finding
+          KeyMap.lookup "cabal-plan-submit.match" properties `shouldBe` Just (String "multiple-packages")
+          case KeyMap.lookup "cabal-plan-submit.packages" properties of
+            Just (Array packages) -> do
+              let entries = [entry | Object entry <- Vector.toList packages]
+              map (\entry -> (valueOrMissing "name" entry, valueOrMissing "version" entry)) entries
+                `shouldMatchList` [("aeson", "2.2.5.0"), ("text-iso8601", "0.1.1.1")]
+              map (valueOrMissing "match") entries `shouldSatisfy` all (== "matched")
+              map (valueOrMissing "relationship") entries `shouldSatisfy` all (`elem` ["direct", "indirect"])
+            _ -> expectationFailure "missing package matches"
+        _ -> expectationFailure "expected exactly one preserved advisory"
+
     it "keeps unmatched advisories in the full enriched SARIF" $ do
       plan <- decodePlanFileOrFail "test/golden/persistent/plan.json"
       sarif <- decodeJsonFileOrFail "test/golden/persistent/sarif.json"
@@ -76,6 +95,11 @@ spec = do
       "render-snapshot renders GitHub dependency snapshot"
       "test/golden/cabal_plan_json/snapshot.json"
       (renderSnapshot "test/golden/cabal_plan_json/plan.json")
+
+expectProps :: KeyMap.KeyMap Value -> KeyMap.KeyMap Value
+expectProps finding = case KeyMap.lookup "properties" finding of
+  Just (Object props) -> props
+  _ -> error "expected finding properties"
 
 golden :: String -> FilePath -> IO ByteString -> Spec
 golden name expectedPath action =
