@@ -37,7 +37,7 @@ import Hgs.LocalUnitFilter (LocalUnitFilter(..), localUnitAllowed)
 import Hgs.Snapshot
   ( snapshotFromPlanGraph
   )
-import Hgs.Why (shortestPathsToPackage, shortestPathsToPackageFrom)
+import Hgs.Why (PackagePath(..), shortestPathsToPackage, shortestPathsToPackageFrom, shortestPathsToPackageVersionFrom)
 import Test.Hspec
 import Test.QuickCheck
 import TestSupport (graphFromValidPlan, SimplePlan(..), expectObject, mkExternalWith, mkLocal, simpleGraph, snapshotInput, valueKey)
@@ -243,6 +243,18 @@ spec = do
             `shouldBe` Just True
 
   describe "extractPlanGraph" $ do
+    it "finds a longer path to the requested version when another version is nearer" $ do
+      let graph = graphFromValidPlan $ RawPlan Nothing Nothing Nothing Nothing
+            [ mkLocal "root" [UnitId "old", UnitId "via"]
+            , mkExternalWith "old" "shared" "1" []
+            , mkExternalWith "via" "via" "1" [UnitId "new"]
+            , mkExternalWith "new" "shared" "2" []
+            ]
+          paths = shortestPathsToPackageVersionFrom AllLocalUnits (PackageName "shared") (Version "2") graph
+      map (map packageVersion . unPackagePath) paths `shouldBe` [[Version "0.1.0.0", Version "1", Version "2"]]
+
+    it "returns only paths ending at the requested package version" $
+      property prop_versionedPaths
     it "rejects an unknown build-tool edge instead of silently dropping it" $ do
       let item = (mkLocal "root" []) {rawPlanItemExeDepends = [UnitId "missing-tool"]}
       extractPlanGraph (RawPlan Nothing Nothing Nothing Nothing [item])
@@ -556,6 +568,7 @@ prop_snapshotDependenciesStayInsideResolved (SimplePlan rawPlan) =
       [ Key.toText k
       | k <- KeyMap.keys resolved
       ]
+
   resolvedEntries =
     KeyMap.elems resolved
 
@@ -571,3 +584,16 @@ prop_snapshotDependenciesStayInsideResolved (SimplePlan rawPlan) =
             False
       _ ->
         False
+
+prop_versionedPaths :: SimplePlan -> Bool
+prop_versionedPaths (SimplePlan raw) = all matches paths
+ where
+  graph = graphFromValidPlan raw
+  paths =
+    [ ((packageName pkg, packageVersion pkg), path)
+    | pkg <- Map.elems (planGraphPackages graph)
+    , path <- shortestPathsToPackageVersionFrom AllLocalUnits (packageName pkg) (packageVersion pkg) graph
+    ]
+  matches (key, PackagePath packages) = case reverse packages of
+    [] -> False
+    target : _ -> (packageName target, packageVersion target) == key
