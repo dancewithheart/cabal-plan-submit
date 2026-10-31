@@ -65,6 +65,11 @@ runtime code reachability. Snapshot scope is `runtime` when a primary component
 path is known, `development` when all known paths are test or benchmark paths,
 and omitted for build-only, unknown, or unreachable uses. Cabal build
 dependencies do not distinguish runtime linking from compile-time use.
+When units sharing a PURL have different uses, production edges take precedence
+in the snapshot graph. Other unit edges and their Cabal origins are retained
+in the scalar `cabal-plan-submit.unmerged-units` snapshot metadata; GitHub may
+not display those edges as dependency paths. Unknown origins are retained in
+the graph to avoid hiding possible production dependencies.
 
 Dependency locations use the plan's per-unit flags, OS, architecture and
 compiler to select conditional branches. If a required value is missing, the

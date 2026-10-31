@@ -14,7 +14,9 @@ import Data.Aeson
   , object
   , (.=)
   )
+import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy qualified as LBS
 import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
 import Data.Containers.ListUtils (nubOrd)
 import Data.Map.Strict (Map)
@@ -23,19 +25,23 @@ import Data.Maybe (catMaybes)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text
 import Data.Time.Clock (UTCTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import Hgs.Domain
-  ( Package(..)
+  ( ComponentName(..)
+  , DependencyKind(..)
+  , DependencyOrigin(..)
+  , Package(..)
   , PackageName(..)
   , PackageSource(..)
   , PlanGraph(..)
-  , UnitId
+  , UnitId(..)
   , Version(..)
   , packageDepends
   )
 import Hgs.Reachability (reachableUnits)
-import Hgs.DependencyUsage (packageUsages, snapshotScope)
+import Hgs.DependencyUsage (Usage(..), dependencyUsages, packageUsagesFrom, snapshotScope)
 
 newtype Purl = Purl { unPurl :: Text }
   deriving stock (Eq, Ord, Show)
@@ -91,6 +97,7 @@ data Resolved = Resolved
   , resolvedRelationship :: Text
   , resolvedDependencies :: [Purl]
   , resolvedScope        :: Maybe Text
+  , resolvedUnmergedUnits :: Maybe Text
   }
   deriving stock (Eq, Show)
 
@@ -127,7 +134,7 @@ manifestFromGraph input graph =
     { manifestName = snapshotManifestName input
     , manifestFilePath = snapshotManifestPath input >>= nonEmptyPath
     , manifestResolved =
-        Map.mapMaybe (mergeUnits . selectUnits) packagesByPurl
+        Map.mapMaybe mergeUnits packagesByPurl
     }
  where
   pkgs :: [Package]
@@ -141,24 +148,61 @@ manifestFromGraph input graph =
   packagesByPurl :: Map Text [Package]
   packagesByPurl = Map.fromListWith (<>) [(unPurl (packagePurl pkg), [pkg]) | pkg <- externalPackages]
 
-  -- Different units share a PURL. Unreachable units must not add their
-  -- component's edges to a reachable unit of the same package version.
+  -- A PURL cannot distinguish units. Prefer production/unknown units when
+  -- a production path exists; preserve the other units in snapshot metadata.
   selectUnits :: [Package] -> [Package]
-  selectUnits units =
-    case filter ((`Set.member` reachable) . packageUnitId) units of
+  selectUnits units
+    | any (hasUsage Production) relevant = filter productionOrUnknown relevant
+    | otherwise = relevant
+   where
+    relevant = case filter ((`Set.member` reachable) . packageUnitId) units of
       [] -> units
       selected -> selected
+    productionOrUnknown pkg = hasUsage Production pkg || hasUsage Unknown pkg
+
+  hasUsage usage pkg = usage `Set.member` Map.findWithDefault Set.empty (packageUnitId pkg) unitUsages
 
   reachable = reachableUnits graph
+  unitUsages = dependencyUsages graph
 
   mergeUnits :: [Package] -> Maybe Resolved
-  mergeUnits [] = Nothing
-  mergeUnits (unit : units) = Just $
-    (foldl mergeResolved (resolvedFromPackage purlByUnitId externalUnitIds unit)
-      (map (resolvedFromPackage purlByUnitId externalUnitIds) units))
-        { resolvedScope = snapshotScope (Map.findWithDefault Set.empty (packageName unit, packageVersion unit) usages) }
+  mergeUnits units = case selectUnits units of
+    [] -> Nothing
+    unit : selected -> Just $
+      (foldl mergeResolved (resolve unit) (map resolve selected))
+          { resolvedScope = snapshotScope (Map.findWithDefault Set.empty (packageName unit, packageVersion unit) usages)
+          , resolvedRelationship = if any packageIsDirect units then "direct" else "indirect"
+          , resolvedUnmergedUnits = encodeUnmerged (catMaybes (map (unmergedEvidence (unit : selected)) units))
+          }
+   where
+    resolve = resolvedFromPackage purlByUnitId externalUnitIds . selectedOrigins
 
-  usages = packageUsages graph
+  selectedOrigins :: Package -> Package
+  selectedOrigins pkg
+    | hasUsage Production pkg = pkg {packageDependencies = Map.mapMaybe keepOrigins (packageDependencies pkg)}
+    | otherwise = pkg
+   where
+    keepOrigins origins =
+      let kept = Set.filter (not . developmentOrigin) origins
+       in if Set.null kept then Nothing else Just kept
+
+  developmentOrigin :: DependencyOrigin -> Bool
+  developmentOrigin origin = case dependencyComponent origin of
+    Just (ComponentName name) -> any (`Text.isPrefixOf` name) ["test:", "bench:"]
+    Nothing -> False
+
+  unmergedEvidence :: [Package] -> Package -> Maybe Package
+  unmergedEvidence selected pkg
+    | pkg `notElem` selected = Just pkg
+    | Map.null omitted = Nothing
+    | otherwise = Just pkg {packageDependencies = omitted}
+   where
+    omitted = Map.differenceWith difference (packageDependencies pkg) (packageDependencies (selectedOrigins pkg))
+    difference original kept =
+      let remaining = original Set.\\ kept
+       in if Set.null remaining then Nothing else Just remaining
+
+  usages = packageUsagesFrom graph unitUsages
 
   externalUnitIds :: Set.Set UnitId
   externalUnitIds =
@@ -170,6 +214,28 @@ manifestFromGraph input graph =
       [ (packageUnitId pkg, packagePurl pkg)
       | pkg <- externalPackages
       ]
+
+encodeUnmerged :: [Package] -> Maybe Text
+encodeUnmerged [] = Nothing
+encodeUnmerged units = Just $ Text.decodeUtf8 $ LBS.toStrict $ encode (map unitEvidence units)
+
+unitEvidence :: Package -> Aeson.Value
+unitEvidence pkg = object
+  [ "unit" .= unUnitId (packageUnitId pkg)
+  , "component" .= fmap unComponentName (packageComponentName pkg)
+  , "dependencies" .=
+      [ object ["unit" .= unUnitId target, "origins" .= map originEvidence (Set.toAscList origins)]
+      | (target, origins) <- Map.toAscList (packageDependencies pkg)
+      ]
+  ]
+
+originEvidence :: DependencyOrigin -> Aeson.Value
+originEvidence origin = object
+  [ "component" .= fmap unComponentName (dependencyComponent origin)
+  , "field" .= case dependencyKind origin of
+      ComponentDependency -> ("depends" :: Text)
+      ExecutableDependency -> "exe-depends"
+  ]
 
 -- A PURL identifies a package version, not an individual Cabal unit.
 -- Combine dependencies and directness rather than discarding a component.
@@ -194,6 +260,7 @@ resolvedFromPackage purlByUnitId externalUnitIds pkg =
   Resolved
     { resolvedPackageUrl = pkgPurl
     , resolvedScope = Nothing
+    , resolvedUnmergedUnits = Nothing
     , resolvedRelationship =
         if packageIsDirect pkg then "direct" else "indirect"
     , resolvedDependencies =
@@ -289,6 +356,7 @@ instance ToJSON Resolved where
       , "dependencies" .= resolvedDependencies resolved
       ]
       <> maybe [] (\scope -> ["scope" .= scope]) (resolvedScope resolved)
+      <> maybe [] (\units -> ["metadata" .= object ["cabal-plan-submit.unmerged-units" .= units]]) (resolvedUnmergedUnits resolved)
 
 instance ToJSON Purl where
   toJSON = toJSON . unPurl

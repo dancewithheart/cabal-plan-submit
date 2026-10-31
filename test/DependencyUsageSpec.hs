@@ -62,6 +62,9 @@ spec = describe "dependency usage" $ do
   it "does not lose path evidence when an edge is added" $
     property prop_usageMonotone
 
+  it "aggregates unit evidence as a union homomorphism" $
+    property prop_packageUsageJoin
+
   it "classifies a known production path even when other evidence is added" $
     property $ \(uses :: [Bool]) ->
       snapshotScope (Set.fromList (Production : [if x then Test else Unknown | x <- uses])) == Just "runtime"
@@ -76,3 +79,14 @@ prop_usageMonotone (SimplePlan raw) = case rawPlanItems raw of
           extended = raw {rawPlanItems = first {rawPlanItemDepends = target : rawPlanItemDepends first} : rest}
           after = dependencyUsages (graphFromValidPlan extended)
        in all (\(unit, uses) -> uses `Set.isSubsetOf` Map.findWithDefault Set.empty unit after) (Map.toList original)
+
+prop_packageUsageJoin :: SimplePlan -> [Bool] -> Bool
+prop_packageUsageJoin (SimplePlan raw) choices =
+  packageUsagesFrom graph (Map.unionWith Set.union left right)
+    == Map.unionWith Set.union (packageUsagesFrom graph left) (packageUsagesFrom graph right)
+ where
+  graph = graphFromValidPlan raw
+  units = Map.keys (planGraphPackages graph)
+  tagged = zip units (cycle (choices <> [True]))
+  left = Map.fromList [(unit, Set.singleton Production) | (unit, True) <- tagged]
+  right = Map.fromList [(unit, Set.singleton (if choice then Test else Benchmark)) | (unit, choice) <- tagged]
