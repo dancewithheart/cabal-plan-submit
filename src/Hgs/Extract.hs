@@ -16,7 +16,8 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Hgs.Domain
-  ( ComponentName
+  ( BuildConfiguration(..)
+  , ComponentName
   , DependencyKind(..)
   , DependencyOrigin(..)
   , Package(..)
@@ -44,7 +45,7 @@ extractPlanGraphChecked plan = do
   items <- traverse complete (zip [0..] (rawPlanItems plan))
   known <- foldM addUnit Set.empty items
   traverse_ (checkDependencies known) items
-  pure (extractCompleteItems items)
+  pure (extractCompleteItems plan items)
  where
   complete (index, item) =
     maybe (Left (IncompletePlanItem index)) Right (toCompleteItem item)
@@ -62,8 +63,8 @@ extractPlanGraphChecked plan = do
 extractPlanGraph :: RawPlan -> Either PlanGraphError PlanGraph
 extractPlanGraph = extractPlanGraphChecked
 
-extractCompleteItems :: [CompleteItem] -> PlanGraph
-extractCompleteItems completeItems =
+extractCompleteItems :: RawPlan -> [CompleteItem] -> PlanGraph
+extractCompleteItems plan completeItems =
   PlanGraph
     { planGraphPackages = packages
     , planGraphLocals = localUnitIds
@@ -96,6 +97,8 @@ extractCompleteItems completeItems =
             , packageSource = completeSource item
             , packageSourcePath = completeSourcePath item
             , packageComponentName = completeComponentName item
+            , packageConfiguration = BuildConfiguration
+                (rawPlanOS plan) (rawPlanArch plan) (rawPlanCompilerId plan) (completeFlags item)
             , packageDependencies = completeDependencies item
             , packageIsDirect = completeUnitId item `Set.member` directExternalUnitIds
             }
@@ -110,6 +113,7 @@ data CompleteItem = CompleteItem
   , completeSource     :: PackageSource
   , completeSourcePath :: Maybe FilePath
   , completeComponentName :: Maybe ComponentName
+  , completeFlags :: Maybe (Map Text.Text Bool)
   , completeDependencies :: Map UnitId (Set DependencyOrigin)
   }
 
@@ -126,6 +130,7 @@ toCompleteItem item = do
       , completeSource = classifySource item
       , completeSourcePath = rawPkgSrcPath =<< rawPlanItemPkgSrc item
       , completeComponentName = rawPlanItemComponentName item
+      , completeFlags = rawPlanItemFlags item
       , completeDependencies = dependencyOrigins item
       }
 

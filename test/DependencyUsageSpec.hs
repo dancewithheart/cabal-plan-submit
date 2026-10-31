@@ -24,7 +24,7 @@ spec = describe "dependency usage" $ do
               , RawComponent (ComponentName "bench:speed") [UnitId "bench"] []
               ]
           }
-        graph = graphFromValidPlan $ RawPlan Nothing Nothing
+        graph = graphFromValidPlan $ RawPlan Nothing Nothing Nothing Nothing
           (root : [mkExternal name name "1" | name <- ["runtime", "tool", "test", "bench"]])
         uses = dependencyUsages graph
     Map.lookup (UnitId "runtime") uses `shouldBe` Just (Set.singleton Production)
@@ -34,7 +34,7 @@ spec = describe "dependency usage" $ do
 
   it "keeps unknown provenance separate from production" $ do
     let root = (mkLocal "root" [UnitId "dep"]) {rawPlanItemComponentName = Nothing}
-        graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+        graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root, mkExternal "dep" "dep" "1"])
     Map.lookup (UnitId "dep") (dependencyUsages graph) `shouldBe` Just (Set.singleton Unknown)
     snapshotScope (Set.singleton Unknown) `shouldBe` Nothing
 
@@ -45,7 +45,7 @@ spec = describe "dependency usage" $ do
               , RawComponent (ComponentName "test:spec") [UnitId "dev"] []
               ]
           }
-        graph = graphFromValidPlan $ RawPlan Nothing Nothing
+        graph = graphFromValidPlan $ RawPlan Nothing Nothing Nothing Nothing
           [root, mkExternal "prod" "shared" "1", mkExternal "dev" "shared" "1"]
         uses = Map.findWithDefault Set.empty (PackageName "shared", Version "1") (packageUsages graph)
     uses `shouldBe` Set.fromList [Production, Test]

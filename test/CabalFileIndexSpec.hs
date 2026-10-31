@@ -128,7 +128,7 @@ spec =
             { rawPlanItemComponentName = Nothing
             , rawPlanItemComponents = [RawComponent (ComponentName "test:spec") [UnitId "dep"] []]
             }
-          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+          graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root, mkExternal "dep" "dep" "1"])
           pkg = planGraphPackages graph Map.! UnitId "root"
           dep = planGraphPackages graph Map.! UnitId "dep"
       fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
@@ -141,7 +141,7 @@ spec =
             , "  build-tool-depends: dep:tool"
             ]
           root = (mkLocal "root" []) {rawPlanItemExeDepends = [UnitId "dep"]}
-          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+          graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root, mkExternal "dep" "dep" "1"])
           pkg = planGraphPackages graph Map.! UnitId "root"
           dep = planGraphPackages graph Map.! UnitId "dep"
       fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
@@ -150,7 +150,7 @@ spec =
     it "does not guess a component when the plan has no component provenance" $ do
       let contents = unlines ["library", "  build-depends: dep"]
           root = (mkLocal "root" [UnitId "dep"]) {rawPlanItemComponentName = Nothing}
-          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+          graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root, mkExternal "dep" "dep" "1"])
           pkg = planGraphPackages graph Map.! UnitId "root"
           dep = planGraphPackages graph Map.! UnitId "dep"
       fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
@@ -197,9 +197,10 @@ spec =
       let fixtureDir = "test/golden/cabal-file-index"
           root = (mkLocal "agda2scala" [UnitId "Agda-2.8.0.2"])
             { rawPlanItemPkgName = Just (PackageName "agda2scala")
+            , rawPlanItemFlags = Nothing
             , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just fixtureDir))
             }
-          graph = graphFromValidPlan $ RawPlan Nothing Nothing
+          graph = graphFromValidPlan $ RawPlan Nothing Nothing Nothing Nothing
             [ root
             , mkExternalWith "Agda-2.8.0.2" "Agda" "2.8.0.2" [UnitId "process-1.6.18.0"]
             , mkExternal "process-1.6.18.0" "process" "1.6.18.0"
@@ -254,7 +255,7 @@ prop_resolvedComponent (component, expected) =
     , "test-suite spec", "  build-depends: dep"
     ]
   root = (mkLocal "root" [UnitId "dep"]) {rawPlanItemComponentName = Just (ComponentName component)}
-  graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+  graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root, mkExternal "dep" "dep" "1"])
   rootPkg = planGraphPackages graph Map.! UnitId "root"
   depPkg = planGraphPackages graph Map.! UnitId "dep"
 

@@ -58,6 +58,8 @@ instance Arbitrary SimplePlan where
         RawPlan
           { rawPlanCabalVersion = Nothing
           , rawPlanCompilerId = Nothing
+          , rawPlanOS = Nothing
+          , rawPlanArch = Nothing
           , rawPlanItems =
               zipWith6 mkItem unitIds depLists exeDepLists localFlags packageNames componentLists
           }
@@ -83,6 +85,7 @@ mkItem unitId deps exeDeps isLocal name components =
     , rawPlanItemExeDepends = exeDeps
     , rawPlanItemComponentName = Nothing
     , rawPlanItemDepends = deps
+    , rawPlanItemFlags = Nothing
     , rawPlanItemPkgSrc =
         if isLocal
           then Just (RawPkgSrc (Just "local") (Just "."))
@@ -100,6 +103,7 @@ mkLocal unitId deps =
     , rawPlanItemComponents = []
     , rawPlanItemExeDepends = []
     , rawPlanItemComponentName = Just (ComponentName "lib")
+    , rawPlanItemFlags = Nothing
     , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
     }
 
@@ -118,6 +122,7 @@ mkExternalWith unitId name version deps =
     , rawPlanItemComponents = []
     , rawPlanItemExeDepends = []
     , rawPlanItemComponentName = Nothing
+    , rawPlanItemFlags = Nothing
     , rawPlanItemPkgSrc = Nothing
     }
 
@@ -131,6 +136,8 @@ simpleGraph =
     RawPlan
       { rawPlanCabalVersion = Nothing
       , rawPlanCompilerId = Nothing
+      , rawPlanOS = Nothing
+      , rawPlanArch = Nothing
       , rawPlanItems =
           [ mkLocal "mypkg-0.1.0.0-inplace" [UnitId "aeson-2.2.4.1", UnitId "text-2.0.2"]
           , mkExternalWith "aeson-2.2.4.1" "aeson" "2.2.4.1" [UnitId "bytestring-0.11.5.3", UnitId "text-2.0.2"]

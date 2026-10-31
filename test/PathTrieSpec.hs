@@ -6,7 +6,8 @@ import Data.List (isInfixOf)
 import Data.Text (Text)
 
 import Hgs.Domain
-  ( Package(..)
+  ( BuildConfiguration(..)
+  , Package(..)
   , PackageName(..)
   , PackageSource(..)
   , UnitId(..)
@@ -69,6 +70,7 @@ pkg unitId name version =
     , packageSource = PackageExternal
     , packageSourcePath = Nothing
     , packageComponentName = Nothing
+    , packageConfiguration = BuildConfiguration Nothing Nothing Nothing Nothing
     , packageDependencies = mempty
     , packageIsDirect = False
     }

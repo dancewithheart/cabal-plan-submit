@@ -12,6 +12,7 @@ module Hgs.Domain
   , PackageSource(..)
   , DependencyKind(..)
   , DependencyOrigin(..)
+  , BuildConfiguration(..)
   , Package(..)
   , packageDepends
   , PlanGraph(..)
@@ -54,6 +55,8 @@ data RawPkgSrc = RawPkgSrc
 data RawPlan = RawPlan
   { rawPlanCabalVersion :: Maybe Text
   , rawPlanCompilerId   :: Maybe Text
+  , rawPlanOS           :: Maybe Text
+  , rawPlanArch         :: Maybe Text
   , rawPlanItems        :: [RawPlanItem]
   }
   deriving stock (Eq, Show)
@@ -67,6 +70,7 @@ data RawPlanItem = RawPlanItem
   , rawPlanItemExeDepends :: [UnitId]
   , rawPlanItemComponents :: [RawComponent]
   , rawPlanItemComponentName :: Maybe ComponentName
+  , rawPlanItemFlags      :: Maybe (Map Text Bool)
   , rawPlanItemPkgSrc     :: Maybe RawPkgSrc
   }
   deriving stock (Eq, Show)
@@ -86,6 +90,14 @@ data DependencyOrigin = DependencyOrigin
   }
   deriving stock (Eq, Ord, Show)
 
+data BuildConfiguration = BuildConfiguration
+  { configurationOS :: Maybe Text
+  , configurationArch :: Maybe Text
+  , configurationCompiler :: Maybe Text
+  , configurationFlags :: Maybe (Map Text Bool)
+  }
+  deriving stock (Eq, Show)
+
 data Package = Package
   { packageUnitId    :: UnitId
   , packageName      :: PackageName
@@ -93,6 +105,7 @@ data Package = Package
   , packageSource    :: PackageSource
   , packageSourcePath :: Maybe FilePath
   , packageComponentName :: Maybe ComponentName
+  , packageConfiguration :: BuildConfiguration
   , packageDependencies :: Map UnitId (Set DependencyOrigin)
   , packageIsDirect  :: Bool
   }
@@ -112,6 +125,8 @@ instance FromJSON RawPlan where
     RawPlan
       <$> o .:? "cabal-lib-version"
       <*> o .:? "compiler-id"
+      <*> o .:? "os"
+      <*> o .:? "arch"
       <*> o .: "install-plan"
 
 instance FromJSON RawPkgSrc where
@@ -137,6 +152,7 @@ instance FromJSON RawPlanItem where
       <*> pure topExeDepends
       <*> pure components
       <*> (fmap ComponentName <$> o .:? "component-name")
+      <*> o .:? "flags"
       <*> o .:? "pkg-src"
 
 parseDependsField :: String -> Maybe Value -> Parser [UnitId]
