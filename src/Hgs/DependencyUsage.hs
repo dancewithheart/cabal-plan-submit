@@ -4,6 +4,7 @@ module Hgs.DependencyUsage
   ( Usage(..)
   , dependencyUsages
   , packageUsages
+  , packageUsagesFrom
   , snapshotScope
   ) where
 
@@ -79,9 +80,12 @@ componentUsage (ComponentName name)
 -- PURLs merge units by package and version. Set union is the join: a
 -- production path is never lost just because another unit is test-only.
 packageUsages :: PlanGraph -> Map (PackageName, Version) (Set Usage)
-packageUsages graph = Map.fromListWith Set.union
+packageUsages graph = packageUsagesFrom graph (dependencyUsages graph)
+
+packageUsagesFrom :: PlanGraph -> Map UnitId (Set Usage) -> Map (PackageName, Version) (Set Usage)
+packageUsagesFrom graph usages = Map.fromListWith Set.union
   [ ((packageName pkg, packageVersion pkg), uses)
-  | (unit, uses) <- Map.toList (dependencyUsages graph)
+  | (unit, uses) <- Map.toList usages
   , Just pkg <- [Map.lookup unit (planGraphPackages graph)]
   ]
 

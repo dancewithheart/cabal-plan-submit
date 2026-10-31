@@ -10,14 +10,19 @@ import Data.ByteString qualified as BS
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text
 import Hgs.Domain
-  ( Package(..)
+  ( ComponentName(..)
+  , DependencyKind(..)
+  , DependencyOrigin(..)
+  , Package(..)
   , PackageName(..)
   , PackageSource(..)
   , PlanGraph(..)
   , RawPkgSrc(..)
   , RawPlan(..)
   , RawPlanItem(..)
+  , RawComponent(..)
   , UnitId(..)
   , Version(..)
   , packageDepends
@@ -40,6 +45,9 @@ spec = do
 
     it "preserves every reachable external dependency when merging units" $
       property prop_reachableEdgesPreserved
+
+    it "never invents origins in unmerged unit evidence" $
+      property prop_unmergedOriginsSound
     it "does not attach an unreachable vector benchmark sublibrary to the vector library" $ do
       bytes <- BS.readFile "test/golden/persistent/plan.json"
       plan <- either (\err -> expectationFailure err >> fail "invalid fixture") pure (decodeRawPlan bytes)
@@ -48,6 +56,39 @@ spec = do
           vectorEntry = entryFromValue (valueKey "pkg:hackage/vector@0.13.2.0" resolved)
       dependencies vectorEntry `shouldNotContain` ["pkg:hackage/random@1.3.1"]
       dependencies vectorEntry `shouldNotContain` ["pkg:hackage/tasty@1.5.4"]
+    it "keeps benchmark-only unit edges separate when a production unit shares its PURL" $ do
+      let root component uid target = (mkLocal uid [UnitId target]) {rawPlanItemComponentName = Just (ComponentName component)}
+          unit component uid deps = (mkExternalWith uid "vector" "1" (map UnitId deps)) {rawPlanItemComponentName = Just (ComponentName component)}
+          graph = graphFromValidPlan $ RawPlan Nothing Nothing Nothing Nothing
+            [ root "lib" "root-lib" "vector-lib"
+            , root "bench:speed" "root-bench" "vector-bench"
+            , unit "lib" "vector-lib" ["base"]
+            , (unit "lib:benchmarks" "vector-bench" ["tasty"]) {rawPlanItemExeDepends = [UnitId "tool"]}
+            , mkExternal "base" "base" "1"
+            , mkExternal "tasty" "tasty" "1"
+            , mkExternal "tool" "tool" "1"
+            ]
+          snapshot = Aeson.toJSON (snapshotFromPlanGraph snapshotInput graph)
+          resolved = valueKey "resolved" (valueKey "cabal-project" (valueKey "manifests" snapshot))
+          vectorEntry = valueKey "pkg:hackage/vector@1" resolved
+      dependencies (entryFromValue vectorEntry) `shouldBe` ["pkg:hackage/base@1"]
+      unmergedEdges vectorEntry `shouldBe` Set.fromList [("vector-bench", "tasty"), ("vector-bench", "tool")]
+      show (valueKey "metadata" vectorEntry) `shouldContain` "exe-depends"
+    it "separates benchmark fields in a combined production unit" $ do
+      let root = (mkLocal "root" [UnitId "shared"]) {rawPlanItemComponentName = Just (ComponentName "lib")}
+          shared = (mkExternal "shared" "shared" "1")
+            { rawPlanItemComponents =
+                [ RawComponent (ComponentName "lib") [UnitId "base"] []
+                , RawComponent (ComponentName "bench:speed") [UnitId "tasty"] []
+                ]
+            }
+          graph = graphFromValidPlan $ RawPlan Nothing Nothing Nothing Nothing
+            [root, shared, mkExternal "base" "base" "1", mkExternal "tasty" "tasty" "1"]
+          snapshot = Aeson.toJSON (snapshotFromPlanGraph snapshotInput graph)
+          resolved = valueKey "resolved" (valueKey "cabal-project" (valueKey "manifests" snapshot))
+          entry = valueKey "pkg:hackage/shared@1" resolved
+      dependencies (entryFromValue entry) `shouldBe` ["pkg:hackage/base@1"]
+      unmergedEdges entry `shouldBe` Set.singleton ("shared", "tasty")
     it "has no self-PURL edges" $
       property prop_snapshotHasNoSelfPurlEdges
 
@@ -117,7 +158,53 @@ prop_reachableEdgesPreserved (SimplePlan raw) = all hasEdges external
   resolved = valueKey "resolved" (valueKey "cabal-project" (valueKey "manifests" value))
   purl p = "pkg:hackage/" <> unPackageName (packageName p) <> "@" <> unVersion (packageVersion p)
   hasEdges p = all (present p) [q | uid <- Set.toList (packageDepends p), Just q <- [Map.lookup uid packages], packageSource q == PackageExternal, purl p /= purl q]
-  present p q = purl q `elem` dependencies (entryFromValue (valueKey (purl p) resolved))
+  present p q =
+    let entry = valueKey (purl p) resolved
+     in purl q `elem` dependencies (entryFromValue entry)
+          || (unUnitId (packageUnitId p), unUnitId (packageUnitId q)) `Set.member` unmergedEdges entry
+
+unmergedEdges :: Aeson.Value -> Set.Set (Text.Text, Text.Text)
+unmergedEdges = Set.map (\(unit, target, _, _) -> (unit, target)) . unmergedOrigins
+
+unmergedOrigins :: Aeson.Value -> Set.Set (Text.Text, Text.Text, Maybe Text.Text, Text.Text)
+unmergedOrigins value = case value of
+  Aeson.Object entry -> case KeyMap.lookup "metadata" entry of
+    Just (Aeson.Object metadata) -> case KeyMap.lookup "cabal-plan-submit.unmerged-units" metadata of
+      Just (Aeson.String json) -> case Aeson.decodeStrict' (Text.encodeUtf8 json) of
+        Just (Aeson.Array units) -> Set.fromList
+          [ (unit, target, component, field)
+          | Aeson.Object u <- toList units
+          , Just (Aeson.String unit) <- [KeyMap.lookup "unit" u]
+          , Just (Aeson.Array deps) <- [KeyMap.lookup "dependencies" u]
+          , Aeson.Object dep <- toList deps
+          , Just (Aeson.String target) <- [KeyMap.lookup "unit" dep]
+          , Just (Aeson.Array origins) <- [KeyMap.lookup "origins" dep]
+          , Aeson.Object origin <- toList origins
+          , Just (Aeson.String field) <- [KeyMap.lookup "field" origin]
+          , let component = case KeyMap.lookup "component" origin of
+                  Just (Aeson.String name) -> Just name
+                  _ -> Nothing
+          ]
+        _ -> Set.empty
+      _ -> Set.empty
+    _ -> Set.empty
+  _ -> Set.empty
+
+prop_unmergedOriginsSound :: SimplePlan -> Bool
+prop_unmergedOriginsSound (SimplePlan raw) = evidence `Set.isSubsetOf` original
+ where
+  graph = graphFromValidPlan raw
+  value = Aeson.toJSON (snapshotFromPlanGraph snapshotInput graph)
+  resolved = expectObject (valueKey "resolved" (valueKey "cabal-project" (valueKey "manifests" value)))
+  evidence = Set.unions (map unmergedOrigins (KeyMap.elems resolved))
+  original = Set.fromList
+    [ (unUnitId (packageUnitId pkg), unUnitId target, unComponentName <$> dependencyComponent origin, field (dependencyKind origin))
+    | pkg <- Map.elems (planGraphPackages graph)
+    , (target, origins) <- Map.toList (packageDependencies pkg)
+    , origin <- Set.toList origins
+    ]
+  field ComponentDependency = "depends"
+  field ExecutableDependency = "exe-depends"
 
 prop_snapshotHasUniqueDependencies :: SimplePlan -> Bool
 prop_snapshotHasUniqueDependencies (SimplePlan rawPlan) =
