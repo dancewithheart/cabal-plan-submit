@@ -29,7 +29,6 @@ import Hgs.Domain
   , PackageName(..)
   , PackageSource(..)
   , PlanGraph(..)
-  , Version(..)
   )
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter
@@ -42,6 +41,8 @@ import Hgs.Why (shortestPathsToPackageFrom)
 import Hgs.PrettyPrint (renderPackageText)
 import Hgs.CabalFileIndex
   ( CabalLineIndex
+  , hasIndexedCabalFile
+  , lookupDependencyLine
   , localPackageCabalFile
   , repoRelativeCabalFile
   )
@@ -92,7 +93,7 @@ enrichResult lineIndex repoRoot localFilter graph result =
     Object o ->
       case explainResult localFilter graph result of
         Nothing ->
-          Object (repairRootLocations repoRoot graph o)
+          Object o
 
         Just explanation ->
           Object (addExplanation lineIndex repoRoot explanation o)
@@ -125,39 +126,25 @@ explainResult localFilter graph result =
 
 findMentionedPackage :: PlanGraph -> Value -> PackageMatch
 findMentionedPackage graph result =
-  case exactMatches of
-    pkg : _ -> MatchedPackage pkg
-    []      -> matchMentionedNames mentionedNames
+  case candidates of
+    [] -> NoPackageMention
+    [pkg] -> MatchedPackage pkg
+    pkgs@(pkg : _) -> AmbiguousPackageMention (packageName pkg) pkgs
  where
-  haystack =
-    Text.unwords (collectStrings result)
-
   mentionedNames =
-    extractConcernedPackageNames haystack
+    extractConcernedPackageNames $
+      case result of
+        Object resultObject -> maybe "" (Text.unwords . collectStrings) (KeyMap.lookup "message" resultObject)
+        _ -> ""
 
-  candidatePackages =
-    [ pkg
+  -- Several Cabal units can represent the same package version. Conversely,
+  -- a version substring elsewhere in an advisory does not identify a unit.
+  candidates =
+    Map.elems $ Map.fromList
+      [ ((packageName pkg, packageVersion pkg), pkg)
     | pkg <- Map.elems (planGraphPackages graph)
     , packageSource pkg == PackageExternal
-    ]
-
-  exactMatches =
-    [ pkg
-    | pkg <- candidatePackages
     , packageName pkg `elem` mentionedNames
-    , unVersion (packageVersion pkg) `Text.isInfixOf` haystack
-    ]
-
-  matchMentionedNames names =
-    case concatMap packagesWithName names of
-      [] -> NoPackageMention
-      [pkg] -> MatchedPackage pkg
-      pkgs@(pkg : _) -> AmbiguousPackageMention (packageName pkg) pkgs
-
-  packagesWithName name =
-    [ pkg
-    | pkg <- candidatePackages
-    , packageName pkg == name
     ]
 
 extractConcernedPackageNames :: Text -> [PackageName]
@@ -229,41 +216,9 @@ relationshipFromPaths paths
 
 addExplanation :: CabalLineIndex -> FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
 addExplanation lineIndex repoRoot explanation =
-  addLevel explanation
-    . addLocations lineIndex repoRoot explanation
+  addLocations lineIndex repoRoot explanation
     . addProperties explanation
     . addMessageExplanation explanation
-
-data EffectiveSeverity
-  = EffectiveError
-  | EffectiveWarning
-  | EffectiveNote
-  deriving stock (Eq, Ord, Show)
-
-effectiveSeverity :: FindingExplanation -> EffectiveSeverity
-effectiveSeverity explanation =
-  case explainedRelationship explanation of
-    "direct"   -> EffectiveError
-    "indirect" -> EffectiveNote
-    _          -> EffectiveNote
-
-sarifLevel :: EffectiveSeverity -> Text
-sarifLevel =
-  \case
-    EffectiveError   -> "error"
-    EffectiveWarning -> "warning"
-    EffectiveNote    -> "note"
-
-problemSeverityText :: EffectiveSeverity -> Text
-problemSeverityText =
-  \case
-    EffectiveError   -> "error"
-    EffectiveWarning -> "warning"
-    EffectiveNote    -> "recommendation"
-
-addLevel :: FindingExplanation -> KeyMap Value -> KeyMap Value
-addLevel explanation =
-  KeyMap.insert "level" (String (sarifLevel (effectiveSeverity explanation)))
 
 addLocations :: CabalLineIndex -> FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
 addLocations lineIndex repoRoot explanation o =
@@ -278,7 +233,8 @@ explanationLocations lineIndex repoRoot explanation =
   , (root, directDep) <- maybeToList (localRootAndDirectDependency path)
   , sourcePath <- maybeToList (packageSourcePath root)
   , let cabalFile = repoRelativeCabalFile repoRoot (localPackageCabalFile root sourcePath)
-  , let line = Map.lookup (cabalFile, packageName directDep) lineIndex
+  , hasIndexedCabalFile lineIndex cabalFile
+  , let line = lookupDependencyLine lineIndex cabalFile root directDep
   ]
 
 addMessageExplanation :: FindingExplanation -> KeyMap Value -> KeyMap Value
@@ -295,25 +251,21 @@ addMessageExplanation explanation o =
       Just (String t) -> t
       _ -> ""
 
-  cvssText = resultSecuritySeverity o
-
   oldMarkdown =
     case KeyMap.lookup "markdown" oldMessage of
-      Just (String t) -> t
-      _ -> ""
+      Just (String t) -> Just t
+      _ -> Nothing
 
   message' =
-    KeyMap.insert "markdown" (String (appendExplanationMarkdown cvssText oldMarkdown explanation)) $
-      KeyMap.insert "text" (String (appendExplanationText cvssText oldText explanation)) oldMessage
+    case oldMarkdown of
+      Just markdown -> KeyMap.insert "markdown" (String (appendExplanationMarkdown markdown explanation)) messageWithText
+      Nothing -> messageWithText
 
-resultSecuritySeverity :: KeyMap Value -> Maybe Text
-resultSecuritySeverity resultObject = do
-  Object properties <- KeyMap.lookup "properties" resultObject
-  String severity <- KeyMap.lookup "security-severity" properties
-  pure severity
+  messageWithText =
+    KeyMap.insert "text" (String (appendExplanationText oldText explanation)) oldMessage
 
-appendExplanationText :: Maybe Text -> Text -> FindingExplanation -> Text
-appendExplanationText cvssText oldText explanation =
+appendExplanationText :: Text -> FindingExplanation -> Text
+appendExplanationText oldText explanation =
   Text.stripEnd oldText
     <> "\n\ncabal-plan-submit:\n"
     <> "  package: "
@@ -322,18 +274,14 @@ appendExplanationText cvssText oldText explanation =
     <> "  relationship: "
     <> explainedRelationship explanation
     <> "\n"
-    <> "  effective severity: "
-    <> problemSeverity explanation
-    <> "\n"
-    <> foldMap (\cvss -> "  advisory CVSS: " <> cvss <> "\n") cvssText
     <> "  paths:\n"
     <> Text.concat
       [ "    - " <> Text.pack (renderPackagePath path) <> "\n"
       | path <- explainedPaths explanation
       ]
 
-appendExplanationMarkdown :: Maybe Text -> Text -> FindingExplanation -> Text
-appendExplanationMarkdown cvssText oldMarkdown explanation =
+appendExplanationMarkdown :: Text -> FindingExplanation -> Text
+appendExplanationMarkdown oldMarkdown explanation =
   Text.stripEnd oldMarkdown
     <> "\n\n## cabal-plan-submit dependency path\n\n"
     <> "* package: `"
@@ -342,10 +290,6 @@ appendExplanationMarkdown cvssText oldMarkdown explanation =
     <> "* relationship: `"
     <> explainedRelationship explanation
     <> "`\n"
-    <> "* effective severity: `"
-    <> problemSeverity explanation
-    <> "`\n"
-    <> foldMap (\cvss -> "* advisory CVSS: `" <> cvss <> "`\n") cvssText
     <> "* paths:\n"
     <> Text.concat
       [ "  * `"
@@ -364,7 +308,6 @@ addProperties explanation o =
       _ -> KeyMap.empty
 
   properties' =
-    KeyMap.insert "tags" (Aeson.toJSON (mergedTags oldProperties explanation)) $
     KeyMap.union
       (KeyMap.fromList
         [ ("cabal-plan-submit.package", String (renderPackageText (explainedPackage explanation)))
@@ -375,62 +318,8 @@ addProperties explanation o =
               | path <- explainedPaths explanation
               ]
           )
-        , ("precision", String "medium")
-        , ("problem.severity", String (problemSeverity explanation))
-        , ("cabal-plan-submit.effective-severity", String (problemSeverity explanation))
         ])
       oldProperties
-
-mergedTags :: KeyMap Value -> FindingExplanation -> [Text]
-mergedTags oldProperties explanation =
-  dedupeText (oldTags oldProperties <> resultTags explanation)
-
-oldTags :: KeyMap Value -> [Text]
-oldTags oldProperties =
-  case KeyMap.lookup "tags" oldProperties of
-    Just (Array tags) ->
-      [ tag
-      | String tag <- Vector.toList tags
-      ]
-
-    _ ->
-      []
-
-resultTags :: FindingExplanation -> [Text]
-resultTags explanation =
-  [ "haskell"
-  , "cabal"
-  , "dependency"
-  , "security"
-  , "cabal-plan-submit"
-  , relationshipTag explanation
-  , effectiveSeverityTag explanation
-  ]
-
-relationshipTag :: FindingExplanation -> Text
-relationshipTag explanation =
-  case explainedRelationship explanation of
-    "direct" ->
-      "direct-dependency"
-
-    _ ->
-      "transitive-dependency"
-
-effectiveSeverityTag :: FindingExplanation -> Text
-effectiveSeverityTag explanation =
-  case effectiveSeverity explanation of
-    EffectiveError ->
-      "effective-severity-error"
-
-    EffectiveWarning ->
-      "effective-severity-warning"
-
-    EffectiveNote ->
-      "effective-severity-note"
-
-problemSeverity :: FindingExplanation -> Text
-problemSeverity =
-  problemSeverityText . effectiveSeverity
 
 adjustArrayField :: Text -> (Value -> Value) -> KeyMap Value -> KeyMap Value
 adjustArrayField field f o =
@@ -450,78 +339,6 @@ collectStrings =
     Number _ -> []
     Bool _ -> []
     Null -> []
-
-repairRootLocations :: FilePath -> PlanGraph -> KeyMap Value -> KeyMap Value
-repairRootLocations repoRoot graph o =
-  case KeyMap.lookup "locations" o of
-    Just (Array locations) ->
-      KeyMap.insert
-        "locations"
-        (Array (Vector.map (repairLocation repoRoot graph) locations))
-        o
-
-    _ ->
-      o
-
-repairLocation :: FilePath -> PlanGraph -> Value -> Value
-repairLocation repoRoot graph =
-  \case
-    Object location ->
-      Object (repairPhysicalLocation repoRoot graph location)
-
-    other ->
-      other
-
-repairPhysicalLocation :: FilePath -> PlanGraph -> KeyMap Value -> KeyMap Value
-repairPhysicalLocation repoRoot graph location =
-  case KeyMap.lookup "physicalLocation" location of
-    Just (Object physicalLocation) ->
-      KeyMap.insert
-        "physicalLocation"
-        (Object (repairPhysicalLocationObject repoRoot graph physicalLocation))
-        location
-
-    _ ->
-      location
-
-repairPhysicalLocationObject :: FilePath -> PlanGraph -> KeyMap Value -> KeyMap Value
-repairPhysicalLocationObject repoRoot graph physicalLocation =
-  case KeyMap.lookup "artifactLocation" physicalLocation of
-    Just (Object artifactLocation)
-      | isProjectRootArtifact repoRoot artifactLocation ->
-          KeyMap.insert
-            "artifactLocation"
-            (Object (KeyMap.insert "uri" (String (Text.pack (fallbackManifestPath graph))) artifactLocation))
-            (KeyMap.insert "region" defaultRegion physicalLocation)
-
-    _ ->
-      physicalLocation
-
-isProjectRootArtifact :: FilePath -> KeyMap Value -> Bool
-isProjectRootArtifact repoRoot artifactLocation =
-  case KeyMap.lookup "uri" artifactLocation of
-    Just (String uri) ->
-      normalise (uriToPath uri) == normalise repoRoot
-
-    _ ->
-      False
-
-fallbackManifestPath :: PlanGraph -> FilePath
-fallbackManifestPath graph =
-  case rootLocalPackages graph of
-    root : _ ->
-      Text.unpack (unPackageName (packageName root)) <> ".cabal"
-
-    [] ->
-      "cabal.project"
-
-defaultRegion :: Value
-defaultRegion =
-  Object $
-    KeyMap.fromList
-      [ ("startLine", Aeson.toJSON (1 :: Int))
-      , ("startColumn", Aeson.toJSON (1 :: Int))
-      ]
 
 sarifRunRoot :: KeyMap Value -> Maybe FilePath
 sarifRunRoot run =

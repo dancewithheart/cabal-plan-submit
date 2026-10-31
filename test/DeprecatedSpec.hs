@@ -22,9 +22,8 @@ import Hgs.Domain
   , UnitId(..)
   , Version(..)
   )
-import Hgs.Extract (extractPlanGraph)
 import Test.Hspec
-import TestSupport (simpleGraph)
+import TestSupport (graphFromValidPlan, simpleGraph)
 
 spec :: Spec
 spec = do
@@ -98,7 +97,7 @@ spec = do
 
     it "reports deprecated dependency reachable through component dependencies" $ do
       let graph =
-            extractPlanGraph
+            graphFromValidPlan
               RawPlan
                 { rawPlanCabalVersion = Nothing
                 , rawPlanCompilerId = Nothing
@@ -110,6 +109,8 @@ spec = do
                         , rawPlanItemPkgVersion = Just (Version "0.4.17")
                         , rawPlanItemDepends = [UnitId "old-time-1.1.1.0-oldtimehash"]
                         , rawPlanItemComponents = []
+                        , rawPlanItemExeDepends = []
+                        , rawPlanItemComponentName = Nothing
                         , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
                         }
                     , RawPlanItem
@@ -119,6 +120,8 @@ spec = do
                         , rawPlanItemPkgVersion = Just (Version "1.1.1.0")
                         , rawPlanItemDepends = []
                         , rawPlanItemComponents = []
+                        , rawPlanItemExeDepends = []
+                        , rawPlanItemComponentName = Nothing
                         , rawPlanItemPkgSrc = Nothing
                         }
                     ]

@@ -8,7 +8,6 @@ module Hgs.Sarif.Common
 import Data.Aeson (Value(..))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
-import Data.Maybe (fromMaybe)
 import Data.Text qualified as Text
 
 import Hgs.Domain (Package)
@@ -27,19 +26,21 @@ locationValue cabalFile maybeLine =
       [ ( "physicalLocation"
         , Object $
             KeyMap.fromList
-              [ ( "artifactLocation"
+              ([ ( "artifactLocation"
                 , Object $
                     KeyMap.fromList
                       [ ("uri", String (Text.pack cabalFile))
                       ]
-                )
-              , ( "region"
+                ) ]
+              <> [ ( "region"
                 , Object $
                     KeyMap.fromList
-                      [ ("startLine", Aeson.toJSON (fromMaybe 1 maybeLine))
+                      [ ("startLine", Aeson.toJSON line)
                       , ("startColumn", Aeson.toJSON (1 :: Int))
                       ]
                 )
-              ]
+                 | Just line <- [maybeLine]
+                 , line > 0
+                 ])
         )
       ]

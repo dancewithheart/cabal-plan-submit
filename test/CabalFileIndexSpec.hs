@@ -11,14 +11,13 @@ import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Vector qualified as Vector
-import Hgs.CabalFileIndex (buildCabalLineIndex, indexCabalFile)
-import Hgs.Domain (PackageName(..), RawPkgSrc(..), RawPlan(..), RawPlanItem(..), UnitId(..))
-import Hgs.Extract (extractPlanGraph)
+import Hgs.CabalFileIndex (CabalLineIndex(..), DependencyDeclaration(..), buildCabalLineIndex, indexCabalFile, lookupDependencyLine)
+import Hgs.Domain (ComponentName(..), PackageName(..), PlanGraph(..), RawComponent(..), RawPkgSrc(..), RawPlan(..), RawPlanItem(..), UnitId(..))
 import Hgs.LocalUnitFilter (LocalUnitFilter(..))
 import Hgs.Sarif.Enrich (enrichSarifValue)
 import Test.Hspec
 import Test.QuickCheck
-import TestSupport (mkExternal, mkExternalWith, mkLocal, valueKey)
+import TestSupport (graphFromValidPlan, mkExternal, mkExternalWith, mkLocal, valueKey)
 
 spec :: Spec
 spec =
@@ -31,7 +30,16 @@ spec =
             , "  build-depends: Agda >=2.8"
             ]
           index = indexCabalFile "." "agda2scala.cabal" contents
-      fmap (Map.lookup ("agda2scala.cabal", PackageName "Agda")) index `shouldBe` Right (Just 4)
+      fmap (fmap (Set.map declarationLine) . Map.lookup ("agda2scala.cabal", PackageName "Agda") . dependencyDeclarations) index
+        `shouldBe` Right (Just (Set.singleton 4))
+
+    it "does not assert a line for a conditional declaration without configuration evidence" $ do
+      let contents = unlines
+            [ "library"
+            , "  if flag(optional)"
+            , "    build-depends: uncertain-pkg"
+            ]
+      indexLines contents `shouldBe` Right Map.empty
 
     it "parses multiline dependencies and indexes packages, not sublibraries or executables" $ do
       let contents = unlines
@@ -53,7 +61,7 @@ spec =
         , ("happy", 11), ("alex", 12), ("example", 12)
         ])
 
-    it "visits component sections and both conditional branches" $ do
+    it "indexes component sections without guessing conditional branches" $ do
       let contents = unlines
             [ "library"
             , "  if flag(debug)"
@@ -75,11 +83,10 @@ spec =
             , "  build-depends: ignored-repository"
             ]
       indexLines contents `shouldBe` Right (Map.fromList
-        [ ("debug-pkg", 3), ("release-pkg", 5), ("app-pkg", 7)
-        , ("test-pkg", 9), ("bench-pkg", 11), ("ffi-pkg", 13), ("setup-pkg", 15)
+        [ ("app-pkg", 7), ("test-pkg", 9), ("bench-pkg", 11), ("ffi-pkg", 13), ("setup-pkg", 15)
         ])
 
-    it "also visits elif branches" $ do
+    it "does not guess between if, elif and else branches" $ do
       let contents = unlines
             [ "library"
             , "  if flag(one)"
@@ -89,10 +96,9 @@ spec =
             , "  else"
             , "    build-depends: third-pkg"
             ]
-      indexLines contents `shouldBe` Right (Map.fromList
-        [("first-pkg", 3), ("second-pkg", 5), ("third-pkg", 7)])
+      indexLines contents `shouldBe` Right Map.empty
 
-    it "follows common-stanza imports, including imports in conditionals" $ do
+    it "follows unconditional common-stanza imports, but not conditional imports" $ do
       let contents = unlines
             [ "common unused"
             , "  build-depends: unused-pkg"
@@ -102,14 +108,59 @@ spec =
             , "  import: base-settings"
             , "  build-tool-depends: tool-pkg:tool"
             , "library"
+            , "  import: extra-settings"
             , "  if flag(debug)"
-            , "    import: extra-settings"
+            , "    import: unused"
             , "    build-depends: local-pkg"
             , "  else"
             , "    build-depends: alternate-pkg"
             ]
-      indexLines contents `shouldBe` Right (Map.fromList
-        [ ("shared-pkg", 4), ("tool-pkg", 7), ("local-pkg", 11), ("alternate-pkg", 13) ])
+      indexLines contents `shouldBe` Right (Map.fromList [("shared-pkg", 4), ("tool-pkg", 7)])
+
+    it "selects a declaration in the component that actually has the edge" $ do
+      let contents = unlines
+            [ "library"
+            , "  build-depends: dep"
+            , "test-suite spec"
+            , "  build-depends: dep"
+            ]
+          root = (mkLocal "root" [])
+            { rawPlanItemComponentName = Nothing
+            , rawPlanItemComponents = [RawComponent (ComponentName "test:spec") [UnitId "dep"] []]
+            }
+          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+          pkg = planGraphPackages graph Map.! UnitId "root"
+          dep = planGraphPackages graph Map.! UnitId "dep"
+      fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
+        (indexCabalFile "." "root.cabal" contents) `shouldBe` Right (Just 4)
+
+    it "matches build-tool edges to build-tool declarations" $ do
+      let contents = unlines
+            [ "library"
+            , "  build-depends: dep"
+            , "  build-tool-depends: dep:tool"
+            ]
+          root = (mkLocal "root" []) {rawPlanItemExeDepends = [UnitId "dep"]}
+          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+          pkg = planGraphPackages graph Map.! UnitId "root"
+          dep = planGraphPackages graph Map.! UnitId "dep"
+      fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
+        (indexCabalFile "." "root.cabal" contents) `shouldBe` Right (Just 3)
+
+    it "does not guess a component when the plan has no component provenance" $ do
+      let contents = unlines ["library", "  build-depends: dep"]
+          root = (mkLocal "root" [UnitId "dep"]) {rawPlanItemComponentName = Nothing}
+          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+          pkg = planGraphPackages graph Map.! UnitId "root"
+          dep = planGraphPackages graph Map.! UnitId "dep"
+      fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
+        (indexCabalFile "." "root.cabal" contents) `shouldBe` Right Nothing
+
+    it "selects only declarations from the resolved component" $
+      property $ forAll (elements [("lib", 2), ("exe:app", 4), ("test:spec", 6)]) prop_resolvedComponent
+
+    it "combines indexes associatively, commutatively and idempotently" $
+      property prop_indexUnionLaws
 
     it "indexes repeated and diamond-shaped imports without repeated expansion" $ do
       let common n =
@@ -148,7 +199,7 @@ spec =
             { rawPlanItemPkgName = Just (PackageName "agda2scala")
             , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just fixtureDir))
             }
-          graph = extractPlanGraph $ RawPlan Nothing Nothing
+          graph = graphFromValidPlan $ RawPlan Nothing Nothing
             [ root
             , mkExternalWith "Agda-2.8.0.2" "Agda" "2.8.0.2" [UnitId "process-1.6.18.0"]
             , mkExternal "process-1.6.18.0" "process" "1.6.18.0"
@@ -179,7 +230,33 @@ spec =
     goldenIndex "persistent-mongoDB" "persistent-mongoDB.cabal"
 
 indexLines :: String -> Either String (Map Text.Text Int)
-indexLines = fmap (Map.mapKeys (unPackageName . snd)) . indexCabalFile "." "fixture.cabal"
+indexLines = fmap (Map.mapMaybe (Set.lookupMin . Set.map declarationLine) . Map.mapKeys (unPackageName . snd) . dependencyDeclarations)
+  . indexCabalFile "." "fixture.cabal"
+
+prop_indexUnionLaws :: NonNegative Int -> NonNegative Int -> NonNegative Int -> Bool
+prop_indexUnionLaws a b c =
+  case traverse indexFor [a, b, c] of
+    Right [x, y, z] -> x <> (y <> z) == (x <> y) <> z && x <> y == y <> x && x <> x == x
+    _ -> False
+ where
+  indexFor (NonNegative n) =
+    indexCabalFile "." ("fixture" <> show (n `mod` 3) <> ".cabal")
+      (unlines ["library", "  build-depends: dep" <> show (n `mod` 5)])
+
+prop_resolvedComponent :: (Text.Text, Int) -> Bool
+prop_resolvedComponent (component, expected) =
+  fmap (\index -> lookupDependencyLine index "root.cabal" rootPkg depPkg)
+    (indexCabalFile "." "root.cabal" contents) == Right (Just expected)
+ where
+  contents = unlines
+    [ "library", "  build-depends: dep"
+    , "executable app", "  build-depends: dep"
+    , "test-suite spec", "  build-depends: dep"
+    ]
+  root = (mkLocal "root" [UnitId "dep"]) {rawPlanItemComponentName = Just (ComponentName component)}
+  graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+  rootPkg = planGraphPackages graph Map.! UnitId "root"
+  depPkg = planGraphPackages graph Map.! UnitId "dep"
 
 prop_earliestDeclarations :: [NonNegative Int] -> Bool
 prop_earliestDeclarations choices =

@@ -6,11 +6,13 @@ import Data.Aeson (Value(..))
 import Data.Aeson qualified as Aeson
 import Data.List (find)
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Vector qualified as Vector
 
 import Hgs.Deprecated (Deprecation(..), findDeprecatedPackages)
-import Hgs.Domain (PackageName(..))
+import Hgs.CabalFileIndex (CabalLineIndex(..), DependencyDeclaration(..))
+import Hgs.Domain (ComponentName(..), DependencyKind(..), PackageName(..))
 import Hgs.Sarif.Deprecated (deprecatedPackagesSarif)
 import Test.Hspec
 import TestSupport (simpleGraph, valueKey)
@@ -45,7 +47,9 @@ bytestringRule = "haskell.deprecated-package.bytestring.0.11.5.3"
 exampleSarif :: Value
 exampleSarif = deprecatedPackagesSarif lineIndex "." findings
  where
-  lineIndex = Map.singleton ("root.cabal", PackageName "aeson") 7
+  lineIndex = CabalLineIndex (Set.singleton "root.cabal") $
+    Map.singleton ("root.cabal", PackageName "aeson")
+      (Set.singleton (DependencyDeclaration (ComponentName "lib") ComponentDependency 7))
   findings = findDeprecatedPackages deprecations simpleGraph
 
 deprecations :: Map.Map PackageName Deprecation

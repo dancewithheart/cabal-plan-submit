@@ -13,14 +13,14 @@ HSEC-2023-0007
     - persistent-test-2.13.2.1 -> base-4.21.0.0
 
 HSEC-2025-0002
-  level: note
+  level: error
   package: cryptonite-0.30
   relationship: indirect
   paths:
     - persistent-mongoDB-2.13.1.0 -> mongoDB-2.7.1.4 -> cryptohash-0.11.9 -> cryptonite-0.30
 
 HSEC-2026-0006
-  level: note
+  level: error
   package: Cabal-3.14.1.0
   relationship: indirect
   paths:
