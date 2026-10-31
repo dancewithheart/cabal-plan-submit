@@ -416,7 +416,7 @@ spec = do
           entry = expectObject (valueKey hspecPurl resolved)
       Map.lookup (packageUnitId hspecPkg) (packageDependencies root)
         `shouldBe` Just (Set.singleton (DependencyOrigin (Just (ComponentName "test:spec")) ComponentDependency))
-      KeyMap.lookup "scope" entry `shouldBe` Nothing
+      KeyMap.lookup "scope" entry `shouldBe` Just (Aeson.String "development")
 
     it "excludes unix-time's test-only hspec from production paths" $ do
       graph <- graphFromFixture "test/golden/unix-time/plan.json"

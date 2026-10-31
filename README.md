@@ -61,8 +61,10 @@ cabal plan-submit inspect-graph
 `--production-only` excludes known local test and benchmark components. Edges
 with unknown component provenance are kept, so some test dependencies may
 remain. Build and setup dependencies are included; this is not a proof of
-runtime reachability. Snapshot output omits the optional `scope` field until
-runtime and development usage can be classified reliably.
+runtime code reachability. Snapshot scope is `runtime` when a primary component
+path is known, `development` when all known paths are test or benchmark paths,
+and omitted for build-only, unknown, or unreachable uses. Cabal build
+dependencies do not distinguish runtime linking from compile-time use.
 
 ## Usage
 
