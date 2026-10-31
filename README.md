@@ -66,6 +66,11 @@ path is known, `development` when all known paths are test or benchmark paths,
 and omitted for build-only, unknown, or unreachable uses. Cabal build
 dependencies do not distinguish runtime linking from compile-time use.
 
+Dependency locations use the plan's per-unit flags, OS, architecture and
+compiler to select conditional branches. If a required value is missing, the
+conditional location is omitted. When the same Cabal file is built with
+different flags, each unit uses its own indexed declarations.
+
 ## Usage
 
 Inspect local project

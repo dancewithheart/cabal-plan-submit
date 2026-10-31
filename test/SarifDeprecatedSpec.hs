@@ -49,7 +49,7 @@ exampleSarif = deprecatedPackagesSarif lineIndex "." findings
  where
   lineIndex = CabalLineIndex (Set.singleton "root.cabal") $
     Map.singleton ("root.cabal", PackageName "aeson")
-      (Set.singleton (DependencyDeclaration (ComponentName "lib") ComponentDependency 7))
+      (Set.singleton (DependencyDeclaration (ComponentName "lib") ComponentDependency 7 Nothing))
   findings = findDeprecatedPackages deprecations simpleGraph
 
 deprecations :: Map.Map PackageName Deprecation
