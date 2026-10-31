@@ -65,6 +65,8 @@ spec = do
             RawPlan
               { rawPlanCabalVersion = Nothing
               , rawPlanCompilerId = Nothing
+              , rawPlanOS = Nothing
+              , rawPlanArch = Nothing
               , rawPlanItems =
                   [ mkLocal "root-0.1.0.0-inplace" [UnitId "vector-A"]
                   , mkExternalWith "vector-A" "vector" "0.13.2.0" [UnitId "base-A", UnitId "base-B", UnitId "vector-B"]
@@ -207,6 +209,7 @@ mkLocal unitId deps =
     , rawPlanItemComponents = []
     , rawPlanItemExeDepends = []
     , rawPlanItemComponentName = Nothing
+    , rawPlanItemFlags = Nothing
     , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
     }
 
@@ -225,6 +228,7 @@ mkExternalWith unitId name version deps =
     , rawPlanItemComponents = []
     , rawPlanItemExeDepends = []
     , rawPlanItemComponentName = Nothing
+    , rawPlanItemFlags = Nothing
     , rawPlanItemPkgSrc = Nothing
     }
 

@@ -45,6 +45,14 @@ import TestSupport (graphFromValidPlan, SimplePlan(..), expectObject, mkExternal
 spec :: Spec
 spec = do
   describe "decodeRawPlan" $ do
+    it "retains the resolved platform, compiler and per-unit flags" $ do
+      bytes <- BS.readFile "test/golden/persistent/plan.json"
+      plan <- either (\err -> expectationFailure err >> fail "invalid fixture") pure (decodeRawPlan bytes)
+      rawPlanOS plan `shouldBe` Just "linux"
+      rawPlanArch plan `shouldBe` Just "x86_64"
+      rawPlanCompilerId plan `shouldBe` Just "ghc-9.12.2"
+      let vectorFlags = [flags | item <- rawPlanItems plan, rawPlanItemPkgName item == Just (PackageName "vector"), Just flags <- [rawPlanItemFlags item]]
+      vectorFlags `shouldSatisfy` any ((== Just True) . Map.lookup "boundschecks")
     it "requires an install-plan array while allowing an empty one" $ do
       map decodeRawPlan ["{}", "{\"install-plan\":null}", "{\"install-plan\":{}}"]
         `shouldSatisfy` all isLeft
@@ -155,9 +163,10 @@ spec = do
               , rawPlanItemComponents = []
               , rawPlanItemExeDepends = []
               , rawPlanItemComponentName = Nothing
+              , rawPlanItemFlags = Nothing
               , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "packages/local"))
               }
-          plan = RawPlan Nothing Nothing [local]
+          plan = RawPlan Nothing Nothing Nothing Nothing [local]
           packages = planGraphPackages (graphFromValidPlan plan)
       fmap packageSourcePath (Map.lookup (UnitId "local-1") packages)
         `shouldBe` Just (Just "packages/local")
@@ -236,7 +245,7 @@ spec = do
   describe "extractPlanGraph" $ do
     it "rejects an unknown build-tool edge instead of silently dropping it" $ do
       let item = (mkLocal "root" []) {rawPlanItemExeDepends = [UnitId "missing-tool"]}
-      extractPlanGraph (RawPlan Nothing Nothing [item])
+      extractPlanGraph (RawPlan Nothing Nothing Nothing Nothing [item])
         `shouldBe` Left (UnknownDependency (UnitId "root") (UnitId "missing-tool"))
 
     it "marks direct external dependencies from local packages" $ do
@@ -250,6 +259,7 @@ spec = do
               , rawPlanItemComponents = []
               , rawPlanItemExeDepends = []
               , rawPlanItemComponentName = Nothing
+              , rawPlanItemFlags = Nothing
               , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
               }
 
@@ -263,6 +273,7 @@ spec = do
               , rawPlanItemComponents = []
               , rawPlanItemExeDepends = []
               , rawPlanItemComponentName = Nothing
+              , rawPlanItemFlags = Nothing
               , rawPlanItemPkgSrc = Nothing
               }
 
@@ -276,6 +287,7 @@ spec = do
               , rawPlanItemComponents = []
               , rawPlanItemExeDepends = []
               , rawPlanItemComponentName = Nothing
+              , rawPlanItemFlags = Nothing
               , rawPlanItemPkgSrc = Nothing
               }
 
@@ -289,6 +301,7 @@ spec = do
               , rawPlanItemComponents = []
               , rawPlanItemExeDepends = []
               , rawPlanItemComponentName = Nothing
+              , rawPlanItemFlags = Nothing
               , rawPlanItemPkgSrc = Nothing
               }
 
@@ -297,6 +310,8 @@ spec = do
               RawPlan
                 { rawPlanCabalVersion = Nothing
                 , rawPlanCompilerId = Nothing
+                , rawPlanOS = Nothing
+                , rawPlanArch = Nothing
                 , rawPlanItems = [localPkg, aesonPkg, textPkg, bytestringPkg]
                 }
 
@@ -322,11 +337,11 @@ spec = do
 
     it "retains unknown component provenance instead of hiding a possible production path" $ do
       let root = (mkLocal "root-test" [UnitId "dep"]) {rawPlanItemComponentName = Nothing}
-          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternalWith "dep" "dep" "1" []])
+          graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root, mkExternalWith "dep" "dep" "1" []])
       shortestPathsToPackageFrom ProductionLocalUnits (PackageName "dep") graph `shouldSatisfy` (not . null)
 
   describe "extractPlanGraphChecked" $ do
-    let plan = RawPlan Nothing Nothing
+    let plan = RawPlan Nothing Nothing Nothing Nothing
         root = mkLocal "root"
         dependency = mkExternalWith "dep" "dep" "1"
 
