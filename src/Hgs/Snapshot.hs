@@ -35,6 +35,7 @@ import Hgs.Domain
   , packageDepends
   )
 import Hgs.Reachability (reachableUnits)
+import Hgs.DependencyUsage (packageUsages, snapshotScope)
 
 newtype Purl = Purl { unPurl :: Text }
   deriving stock (Eq, Ord, Show)
@@ -89,6 +90,7 @@ data Resolved = Resolved
   { resolvedPackageUrl   :: Purl
   , resolvedRelationship :: Text
   , resolvedDependencies :: [Purl]
+  , resolvedScope        :: Maybe Text
   }
   deriving stock (Eq, Show)
 
@@ -152,8 +154,11 @@ manifestFromGraph input graph =
   mergeUnits :: [Package] -> Maybe Resolved
   mergeUnits [] = Nothing
   mergeUnits (unit : units) = Just $
-    foldl mergeResolved (resolvedFromPackage purlByUnitId externalUnitIds unit)
-      (map (resolvedFromPackage purlByUnitId externalUnitIds) units)
+    (foldl mergeResolved (resolvedFromPackage purlByUnitId externalUnitIds unit)
+      (map (resolvedFromPackage purlByUnitId externalUnitIds) units))
+        { resolvedScope = snapshotScope (Map.findWithDefault Set.empty (packageName unit, packageVersion unit) usages) }
+
+  usages = packageUsages graph
 
   externalUnitIds :: Set.Set UnitId
   externalUnitIds =
@@ -188,6 +193,7 @@ resolvedFromPackage :: Map UnitId Purl -> Set.Set UnitId -> Package -> Resolved
 resolvedFromPackage purlByUnitId externalUnitIds pkg =
   Resolved
     { resolvedPackageUrl = pkgPurl
+    , resolvedScope = Nothing
     , resolvedRelationship =
         if packageIsDirect pkg then "direct" else "indirect"
     , resolvedDependencies =
@@ -277,13 +283,12 @@ instance ToJSON Manifest where
 
 instance ToJSON Resolved where
   toJSON resolved =
-    -- Scope is optional. A package may be used only by tests, setup or build
-    -- tools, and merged units do not yet establish a reliable runtime scope.
-    object
+    object $
       [ "package_url" .= resolvedPackageUrl resolved
       , "relationship" .= resolvedRelationship resolved
       , "dependencies" .= resolvedDependencies resolved
       ]
+      <> maybe [] (\scope -> ["scope" .= scope]) (resolvedScope resolved)
 
 instance ToJSON Purl where
   toJSON = toJSON . unPurl
