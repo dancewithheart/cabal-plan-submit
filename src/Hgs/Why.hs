@@ -26,6 +26,7 @@ import Hgs.Domain
   )
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter(..)
+  , dependencyUnits
   , localUnitAllowed
   )
 import Hgs.Paths
@@ -58,7 +59,7 @@ shortestPathsToPackageFrom filterKind target graph =
     ]
 
   pathToLocalRoot =
-    bfs packages target
+    bfs filterKind packages target
 
 nubOn :: Ord b => (a -> b) -> [a] -> [a]
 nubOn f =
@@ -75,8 +76,8 @@ nubOn f =
     key =
       f x
 
-bfs :: Map.Map UnitId Package -> PackageName -> Package -> Maybe PackagePath
-bfs packages target root =
+bfs :: LocalUnitFilter -> Map.Map UnitId Package -> PackageName -> Package -> Maybe PackagePath
+bfs filterKind packages target root =
   go Set.empty (Seq.singleton [root])
  where
   go seen queue =
@@ -97,8 +98,9 @@ bfs packages target root =
 
                 nextPkgs =
                   [ depPkg
-                  | depUnitId <- Set.toAscList (packageDepends pkg)
+                  | depUnitId <- Set.toAscList (dependencyUnits filterKind pkg)
                   , depPkg <- maybeToList (Map.lookup depUnitId packages)
+                  , packageSource depPkg /= PackageLocal || localUnitAllowed filterKind depPkg
                   ]
 
                 rest' =

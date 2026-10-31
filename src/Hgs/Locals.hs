@@ -15,6 +15,7 @@ import Hgs.Domain
   , PackageSource(..)
   , PlanGraph(..)
   , UnitId(..)
+  , packageDepends
   )
 import Hgs.PrettyPrint (renderPackage)
 

@@ -401,6 +401,7 @@ enrichSarif localFilter planPath sarifPath = do
                 Aeson.encode $
                   enrichSarifValue
                     lineIndex
+                    repoRoot
                     localFilter
                     graph
                     sarif

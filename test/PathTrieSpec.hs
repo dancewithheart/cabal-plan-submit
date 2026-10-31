@@ -68,7 +68,8 @@ pkg unitId name version =
     , packageVersion = Version version
     , packageSource = PackageExternal
     , packageSourcePath = Nothing
-    , packageDepends = mempty
+    , packageComponentName = Nothing
+    , packageDependencies = mempty
     , packageIsDirect = False
     }
 

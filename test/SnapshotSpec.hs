@@ -19,15 +19,15 @@ import Hgs.Domain
   , RawPlanItem(..)
   , UnitId(..)
   , Version(..)
+  , packageDepends
   )
-import Hgs.Extract (extractPlanGraph)
 import Hgs.Snapshot
   ( snapshotFromPlanGraph
   )
 import Hgs.Validate (validateSnapshotValue, getValidationErrors)
 import Test.Hspec
 import Test.QuickCheck
-import TestSupport (SimplePlan(..), expectObject, snapshotInput, valueKey)
+import TestSupport (graphFromValidPlan, SimplePlan(..), expectObject, snapshotInput, valueKey)
 
 spec :: Spec
 spec = do
@@ -58,7 +58,7 @@ spec = do
                   , mkExternal "text-2.0.2" "text" "2.0.2"
                   ]
               }
-          value = Aeson.toJSON (snapshotFromPlanGraph snapshotInput (extractPlanGraph rawPlan))
+          value = Aeson.toJSON (snapshotFromPlanGraph snapshotInput (graphFromValidPlan rawPlan))
           resolved = expectObject (valueKey "resolved" (valueKey "cabal-project" (valueKey "manifests" value)))
           vect = valueKey "pkg:hackage/vector@0.13.2.0" (Aeson.Object resolved)
           errs = getValidationErrors (validateSnapshotValue value)
@@ -76,7 +76,7 @@ prop_snapshotHasNoSelfPurlEdges (SimplePlan rawPlan) =
   all noSelfEdge (resolvedEntries snapshotValue)
  where
   snapshotValue =
-    Aeson.toJSON (snapshotFromPlanGraph snapshotInput (extractPlanGraph rawPlan))
+    Aeson.toJSON (snapshotFromPlanGraph snapshotInput (graphFromValidPlan rawPlan))
 
   noSelfEdge entry =
     packageUrl entry `notElem` dependencies entry
@@ -86,7 +86,7 @@ prop_snapshotHasUniqueDependencies (SimplePlan rawPlan) =
   all unique (resolvedEntries snapshotValue)
  where
   snapshotValue =
-    Aeson.toJSON (snapshotFromPlanGraph snapshotInput (extractPlanGraph rawPlan))
+    Aeson.toJSON (snapshotFromPlanGraph snapshotInput (graphFromValidPlan rawPlan))
 
   unique entry =
     let deps = dependencies entry
@@ -97,7 +97,7 @@ prop_snapshotHasClosure (SimplePlan rawPlan) =
   all depsKnown entries
  where
   snapshotValue =
-    Aeson.toJSON (snapshotFromPlanGraph snapshotInput (extractPlanGraph rawPlan))
+    Aeson.toJSON (snapshotFromPlanGraph snapshotInput (graphFromValidPlan rawPlan))
 
   resolved =
     expectObject (valueKey "resolved" (valueKey "cabal-project" (valueKey "manifests" snapshotValue)))
@@ -115,7 +115,7 @@ prop_directnessSoundness :: SimplePlan -> Bool
 prop_directnessSoundness (SimplePlan rawPlan) =
   all sound directExternalPkgs
  where
-  graph = extractPlanGraph rawPlan
+  graph = graphFromValidPlan rawPlan
   pkgs = Map.elems (planGraphPackages graph)
 
   localPkgs =
@@ -169,6 +169,8 @@ mkLocal unitId deps =
     , rawPlanItemPkgVersion = Just (Version "0.1.0.0")
     , rawPlanItemDepends = deps
     , rawPlanItemComponents = []
+    , rawPlanItemExeDepends = []
+    , rawPlanItemComponentName = Nothing
     , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
     }
 
@@ -185,6 +187,8 @@ mkExternalWith unitId name version deps =
     , rawPlanItemPkgVersion = Just (Version version)
     , rawPlanItemDepends = deps
     , rawPlanItemComponents = []
+    , rawPlanItemExeDepends = []
+    , rawPlanItemComponentName = Nothing
     , rawPlanItemPkgSrc = Nothing
     }
 

@@ -24,7 +24,6 @@ import Hgs.Deprecated
   , Deprecation
   )
 import Hgs.Domain (PackageName, RawPlan)
-import Hgs.Extract (extractPlanGraph)
 import Hgs.Input.PlanJson (decodeRawPlan)
 import Hgs.LocalUnitFilter (LocalUnitFilter(..))
 import Hgs.Sarif.Enrich
@@ -41,7 +40,8 @@ import Hgs.Snapshot
   ( snapshotFromPlanGraph
   )
 import TestSupport
-  ( snapshotInput
+  ( graphFromValidPlan
+  , snapshotInput
   )
 import Test.Hspec
 
@@ -51,7 +51,7 @@ spec = do
     it "keeps unmatched advisories in the full enriched SARIF" $ do
       plan <- decodePlanFileOrFail "test/golden/persistent/plan.json"
       sarif <- decodeJsonFileOrFail "test/golden/persistent/sarif.json"
-      let enriched = enrichSarifValue Map.empty AllLocalUnits (extractPlanGraph plan) sarif
+      let enriched = enrichSarifValue mempty AllLocalUnits (graphFromValidPlan plan) sarif
           ruleIds = map (valueOrMissing "ruleId") . sarifResults
       ruleIds enriched `shouldBe` ruleIds sarif
       ruleIds enriched `shouldContain` ["HSEC-2026-0007"]
@@ -115,7 +115,7 @@ renderInspectDeprecatedProductionOnly planPath deprecatedPath = do
   index <- readDeprecatedIndexOrFail deprecatedPath
 
   let graph =
-        extractPlanGraph plan
+        graphFromValidPlan plan
 
       deprecated =
         findDeprecatedPackagesFrom ProductionLocalUnits index graph
@@ -129,9 +129,9 @@ renderEnrichedSarifProjection planPath sarifPath = do
 
   let enriched =
         enrichSarifValue
-          Map.empty
+          mempty
           AllLocalUnits
-          (extractPlanGraph plan)
+          (graphFromValidPlan plan)
           sarif
 
   pure (BS8.pack (renderSarifProjection enriched))
@@ -143,9 +143,9 @@ renderEnrichedSarif planPath sarifPath = do
 
   let enriched =
         enrichSarifValue
-          Map.empty
+          mempty
           AllLocalUnits
-          (extractPlanGraph plan)
+          (graphFromValidPlan plan)
           sarif
 
   pure (encodeJsonStrict enriched)
@@ -155,7 +155,7 @@ renderSnapshot planPath = do
   plan <- decodePlanFileOrFail planPath
 
   let graph =
-        extractPlanGraph plan
+        graphFromValidPlan plan
 
       snapshot =
         snapshotFromPlanGraph snapshotInput graph
