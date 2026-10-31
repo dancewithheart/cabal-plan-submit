@@ -6,6 +6,7 @@ module SnapshotSpec (spec) where
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.ByteString qualified as BS
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as Text
@@ -24,6 +25,8 @@ import Hgs.Domain
 import Hgs.Snapshot
   ( snapshotFromPlanGraph
   )
+import Hgs.Input.PlanJson (decodeRawPlan)
+import Hgs.Reachability (closure, reachableUnits)
 import Hgs.Validate (validateSnapshotValue, getValidationErrors)
 import Test.Hspec
 import Test.QuickCheck
@@ -32,6 +35,19 @@ import TestSupport (graphFromValidPlan, SimplePlan(..), expectObject, snapshotIn
 spec :: Spec
 spec = do
   describe "snapshot invariants" $ do
+    it "computes an extensive, idempotent closure" $
+      property prop_closureLaws
+
+    it "preserves every reachable external dependency when merging units" $
+      property prop_reachableEdgesPreserved
+    it "does not attach an unreachable vector benchmark sublibrary to the vector library" $ do
+      bytes <- BS.readFile "test/golden/persistent/plan.json"
+      plan <- either (\err -> expectationFailure err >> fail "invalid fixture") pure (decodeRawPlan bytes)
+      let value = Aeson.toJSON (snapshotFromPlanGraph snapshotInput (graphFromValidPlan plan))
+          resolved = valueKey "resolved" (valueKey "cabal-project" (valueKey "manifests" value))
+          vectorEntry = entryFromValue (valueKey "pkg:hackage/vector@0.13.2.0" resolved)
+      dependencies vectorEntry `shouldNotContain` ["pkg:hackage/random@1.3.1"]
+      dependencies vectorEntry `shouldNotContain` ["pkg:hackage/tasty@1.5.4"]
     it "has no self-PURL edges" $
       property prop_snapshotHasNoSelfPurlEdges
 
@@ -80,6 +96,26 @@ prop_snapshotHasNoSelfPurlEdges (SimplePlan rawPlan) =
 
   noSelfEdge entry =
     packageUrl entry `notElem` dependencies entry
+
+prop_closureLaws :: [(Int, Int)] -> [Int] -> Bool
+prop_closureLaws edges seeds =
+  let successors x = Set.fromList [y | (a, y) <- edges, a == x]
+      seedSet = Set.fromList seeds
+      reached = closure successors seedSet
+   in seedSet `Set.isSubsetOf` reached && closure successors reached == reached
+
+prop_reachableEdgesPreserved :: SimplePlan -> Bool
+prop_reachableEdgesPreserved (SimplePlan raw) = all hasEdges external
+ where
+  graph = graphFromValidPlan raw
+  packages = planGraphPackages graph
+  reachable = reachableUnits graph
+  external = [p | p <- Map.elems packages, packageSource p == PackageExternal, packageUnitId p `Set.member` reachable]
+  value = Aeson.toJSON (snapshotFromPlanGraph snapshotInput graph)
+  resolved = valueKey "resolved" (valueKey "cabal-project" (valueKey "manifests" value))
+  purl p = "pkg:hackage/" <> unPackageName (packageName p) <> "@" <> unVersion (packageVersion p)
+  hasEdges p = all (present p) [q | uid <- Set.toList (packageDepends p), Just q <- [Map.lookup uid packages], packageSource q == PackageExternal, purl p /= purl q]
+  present p q = purl q `elem` dependencies (entryFromValue (valueKey (purl p) resolved))
 
 prop_snapshotHasUniqueDependencies :: SimplePlan -> Bool
 prop_snapshotHasUniqueDependencies (SimplePlan rawPlan) =

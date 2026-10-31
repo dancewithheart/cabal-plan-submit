@@ -34,6 +34,7 @@ import Hgs.Domain
   , Version(..)
   , packageDepends
   )
+import Hgs.Reachability (reachableUnits)
 
 newtype Purl = Purl { unPurl :: Text }
   deriving stock (Eq, Ord, Show)
@@ -124,10 +125,7 @@ manifestFromGraph input graph =
     { manifestName = snapshotManifestName input
     , manifestFilePath = snapshotManifestPath input >>= nonEmptyPath
     , manifestResolved =
-        Map.fromListWith mergeResolved
-          [ (unPurl (packagePurl pkg), resolvedFromPackage purlByUnitId externalUnitIds pkg)
-          | pkg <- externalPackages
-          ]
+        Map.mapMaybe (mergeUnits . selectUnits) packagesByPurl
     }
  where
   pkgs :: [Package]
@@ -137,6 +135,25 @@ manifestFromGraph input graph =
   externalPackages :: [Package]
   externalPackages =
     filter ((== PackageExternal) . packageSource) pkgs
+
+  packagesByPurl :: Map Text [Package]
+  packagesByPurl = Map.fromListWith (<>) [(unPurl (packagePurl pkg), [pkg]) | pkg <- externalPackages]
+
+  -- Different units share a PURL. Unreachable units must not add their
+  -- component's edges to a reachable unit of the same package version.
+  selectUnits :: [Package] -> [Package]
+  selectUnits units =
+    case filter ((`Set.member` reachable) . packageUnitId) units of
+      [] -> units
+      selected -> selected
+
+  reachable = reachableUnits graph
+
+  mergeUnits :: [Package] -> Maybe Resolved
+  mergeUnits [] = Nothing
+  mergeUnits (unit : units) = Just $
+    foldl mergeResolved (resolvedFromPackage purlByUnitId externalUnitIds unit)
+      (map (resolvedFromPackage purlByUnitId externalUnitIds) units)
 
   externalUnitIds :: Set.Set UnitId
   externalUnitIds =

@@ -53,6 +53,7 @@ executable cabal-plan-submit
     Hgs.Paths
     Hgs.PathTrie
     Hgs.PrettyPrint
+    Hgs.Reachability
     Hgs.Snapshot
     Hgs.Validate
     Hgs.Input.PlanJson
@@ -97,6 +98,7 @@ test-suite plan-json-test
       Hgs.Paths
       Hgs.PathTrie
       Hgs.PrettyPrint
+      Hgs.Reachability
       Hgs.Sarif.Common
       Hgs.Sarif.Deprecated
       Hgs.Sarif.Enrich
