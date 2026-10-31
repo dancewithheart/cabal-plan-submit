@@ -17,7 +17,6 @@ import Data.Foldable (asum)
 import Data.Set qualified as Set
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, maybeToList)
-import System.FilePath
   ( dropTrailingPathSeparator
   , normalise
   )
@@ -65,64 +64,62 @@ data PackageMatch
   | AmbiguousPackageMention PackageName [Package]
   deriving stock (Eq, Show)
 
-enrichSarifValue :: CabalLineIndex -> LocalUnitFilter -> PlanGraph -> Value -> Value
-enrichSarifValue lineIndex localFilter graph =
-  \case
-    Object o ->
-      Object (adjustArrayField "runs" (enrichRun lineIndex localFilter graph) o)
+enrichSarifValue :: CabalLineIndex -> FilePath -> LocalUnitFilter -> PlanGraph -> Value -> Value
+enrichSarifValue lineIndex indexRoot localFilter graph = \case
+  Object o -> Object (adjustArrayField "runs" (enrichRun lineIndex indexRoot localFilter graph) o)
+  other -> other
 
-    other ->
-      other
+enrichRun :: CabalLineIndex -> FilePath -> LocalUnitFilter -> PlanGraph -> Value -> Value
+enrichRun lineIndex indexRoot localFilter graph = \case
+  Object o ->
+    let sarifRoot = fromMaybe indexRoot (sarifRunRoot o)
+      in Object (adjustArrayField "results" (enrichResult lineIndex indexRoot sarifRoot localFilter graph) o)
+  other -> other
 
-enrichRun :: CabalLineIndex -> LocalUnitFilter -> PlanGraph -> Value -> Value
-enrichRun lineIndex localFilter graph =
-  \case
-    Object o ->
-      let repoRoot =
-            fromMaybe
-              (guessRepoRoot graph)
-              (sarifRunRoot o)
-       in Object (adjustArrayField "results" (enrichResult lineIndex repoRoot localFilter graph) o)
-
-    other ->
-      other
-
-enrichResult :: CabalLineIndex -> FilePath -> LocalUnitFilter -> PlanGraph -> Value -> Value
-enrichResult lineIndex repoRoot localFilter graph result =
+enrichResult lineIndex indexRoot sarifRoot localFilter graph result =
   case result of
     Object o ->
-      case explainResult localFilter graph result of
-        Nothing ->
+      case findMentionedPackage graph result of
+        NoPackageMention ->
           Object o
-
-        Just explanation ->
-          Object (addExplanation lineIndex repoRoot explanation o)
-
+        AmbiguousPackageMention _ pkgs ->
+          Object (addAmbiguousPackages pkgs o)
+        MatchedPackage pkg ->
+          case explainPackage localFilter graph pkg of
+            Nothing -> Object o
+            Just explanation ->
+              Object (addExplanation lineIndex indexRoot sarifRoot explanation o)
     _ ->
       result
 
-explainResult :: LocalUnitFilter -> PlanGraph -> Value -> Maybe FindingExplanation
-explainResult localFilter graph result =
-  case findMentionedPackage graph result of
-    NoPackageMention -> Nothing
-    AmbiguousPackageMention _ _ -> Nothing
-    MatchedPackage pkg ->
-      let paths =
-            [ path
-            | path <- shortestPathsToPackageFrom localFilter (packageName pkg) graph
-            , pathEndsAt pkg path
-            ]
-       in case paths of
-            [] ->
-              Nothing
+explainPackage :: LocalUnitFilter -> PlanGraph -> Package -> Maybe FindingExplanation
+explainPackage localFilter graph pkg =
+  case paths of
+    [] -> Nothing
+    _ ->
+      Just FindingExplanation
+        { explainedPackage = pkg
+        , explainedRelationship = relationshipFromPaths paths
+        , explainedPaths = paths
+        }
+ where
+  paths =
+    [ path
+    | path <- shortestPathsToPackageFrom localFilter (packageName pkg) graph
+    , pathEndsAt pkg path
+    ]
 
-            _ ->
-              Just
-                FindingExplanation
-                  { explainedPackage = pkg
-                  , explainedRelationship = relationshipFromPaths paths
-                  , explainedPaths = paths
-                  }
+addAmbiguousPackages :: [Package] -> KeyMap Value -> KeyMap Value
+addAmbiguousPackages pkgs o = KeyMap.insert "properties" (Object updated) o
+ where
+  original = case KeyMap.lookup "properties" o of
+    Just (Object properties) -> properties
+    _ -> KeyMap.empty
+  updated =
+    KeyMap.insert
+      "cabal-plan-submit.ambiguous-packages"
+      (Aeson.toJSON (map renderPackageText pkgs))
+      original
 
 findMentionedPackage :: PlanGraph -> Value -> PackageMatch
 findMentionedPackage graph result =
@@ -214,27 +211,28 @@ relationshipFromPaths paths
       [_localRoot, _target] -> True
       _                     -> False
 
-addExplanation :: CabalLineIndex -> FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
-addExplanation lineIndex repoRoot explanation =
-  addLocations lineIndex repoRoot explanation
+addExplanation :: CabalLineIndex -> FilePath -> FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
+addExplanation lineIndex indexRoot sarifRoot explanation =
+  addLocations lineIndex indexRoot sarifRoot explanation
     . addProperties explanation
     . addMessageExplanation explanation
 
-addLocations :: CabalLineIndex -> FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
-addLocations lineIndex repoRoot explanation o =
-  case explanationLocations lineIndex repoRoot explanation of
+addLocations :: CabalLineIndex -> FilePath -> FilePath -> FindingExplanation -> KeyMap Value -> KeyMap Value
+addLocations lineIndex indexRoot sarifRoot explanation o =
+  case explanationLocations lineIndex indexRoot sarifRoot explanation of
     []        -> o
     locations -> KeyMap.insert "locations" (Array (Vector.fromList locations)) o
 
-explanationLocations :: CabalLineIndex -> FilePath -> FindingExplanation -> [Value]
-explanationLocations lineIndex repoRoot explanation =
-  [ locationValue cabalFile line
+explanationLocations :: CabalLineIndex -> FilePath -> FilePath -> FindingExplanation -> [Value]
+explanationLocations lineIndex indexRoot sarifRoot explanation =
+  [ locationValue (repoRelativeCabalFile sarifRoot cabalFile) line
   | path <- explainedPaths explanation
   , (root, directDep) <- maybeToList (localRootAndDirectDependency path)
   , sourcePath <- maybeToList (packageSourcePath root)
-  , let cabalFile = repoRelativeCabalFile repoRoot (localPackageCabalFile root sourcePath)
-  , hasIndexedCabalFile lineIndex cabalFile
-  , let line = lookupDependencyLine lineIndex cabalFile root directDep
+  , let cabalFile = localPackageCabalFile root sourcePath
+  , let indexFile = repoRelativeCabalFile indexRoot cabalFile
+  , hasIndexedCabalFile lineIndex indexFile
+  , let line = lookupDependencyLine lineIndex indexFile root directDep
   ]
 
 addMessageExplanation :: FindingExplanation -> KeyMap Value -> KeyMap Value
@@ -367,57 +365,6 @@ artifactUri =
 
     _ ->
       Nothing
-
-guessRepoRoot :: PlanGraph -> FilePath
-guessRepoRoot graph =
-  case rootLocalPackages graph of
-    [] ->
-      "."
-
-    [pkg] ->
-      case packageSourcePath pkg of
-        Just path ->
-          dropTrailingPathSeparator (normalise path)
-
-        Nothing ->
-          "."
-
-    pkgs ->
-      commonParent
-        [ path
-        | pkg <- pkgs
-        , path <- maybeToList (packageSourcePath pkg)
-        ]
-
-rootLocalPackages :: PlanGraph -> [Package]
-rootLocalPackages graph =
-  [ pkg
-  | pkg <- Map.elems (planGraphPackages graph)
-  , packageSource pkg == PackageLocal
-  ]
-
-commonParent :: [FilePath] -> FilePath
-commonParent paths =
-  case map (normalise . dropTrailingPathSeparator) paths of
-    [] ->
-      "."
-
-    [path] ->
-      path
-
-    path : rest ->
-      foldl commonPrefixPath path rest
-
-commonPrefixPath :: FilePath -> FilePath -> FilePath
-commonPrefixPath a b =
-  joinPathParts $
-    map fst $
-      takeWhile (uncurry (==)) $
-        zip (splitPathParts a) (splitPathParts b)
-
-splitPathParts :: FilePath -> [FilePath]
-splitPathParts =
-  filter (not . null) . splitOnSlash . normalise
 
 joinPathParts :: [FilePath] -> FilePath
 joinPathParts parts =
