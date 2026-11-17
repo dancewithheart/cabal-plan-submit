@@ -11,16 +11,19 @@ Haskell dependency intelligence for supply-chain security.
 
 `cabal-plan-submit` reads Cabal's `dist-newstyle/cache/plan.json` and helps with three practical workflows:
 
-1. Find deprecated Hackage dependencies and explain why they are present.
-
+1. Find deprecated Hackage dependencies and explain why they are present
 ```sh
 cabal run cabal-plan-submit -- why dist-newstyle/cache/plan.json cryptonite
 cabal run cabal-plan-submit -- why $PROJECT_PATH/dist-newstyle/cache/plan.json process
 ```
-2. Submit Cabal dependency graphs to GitHub Dependency Graph.
+
+2. Submit Cabal dependency graphs to GitHub Dependency Graph
 ```sh
-cabal-plan-submit render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > snapshot.json
+cabal run cabal-plan-submit -- render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > snapshot.json
 ```
+
+3. Improve SARIF file with vulnerabilities created by `cabal-audit` so they are nicely rendered on GitHub and have
+extra information: whether dependency is transitive or direct, what paths leads to the dependency
 
 ## Use in Github Action
 
@@ -64,41 +67,14 @@ remain. Build and setup dependencies are included; this is not a proof of
 runtime reachability. Snapshot output omits the optional `scope` field until
 runtime and development usage can be classified reliably.
 
-## Usage
+## Create file with dependencies for GitHUB
 
-Inspect local project
-```
-cabal build
-cabal run cabal-plan-submit -- inspect-plan dist-newstyle/cache/plan.json
-cabal run cabal-plan-submit -- inspect-graph dist-newstyle/cache/plan.json
-```
-
-Inspect another project
-```
-cabal run cabal-plan-submit -- inspect-plan "$PROJECT_PATH/dist-newstyle/cache/plan.json"
-cabal run cabal-plan-submit -- inspect-graph "$PROJECT_PATH/dist-newstyle/cache/plan.json"
-```
-
-Render a snapshot JSON file
+Create JSON with dependencies in format suitable for GitHub (snapshot file):
 ```
 SHA="${GITHUB_SHA:-$(git rev-parse HEAD)}"
 REF="${GITHUB_REF:-refs/heads/$(git branch --show-current)}"
 
-cabal build
-SNAPSHOT_BIN="$(cabal list-bin exe:cabal-plan-submit)"
-"$SNAPSHOT_BIN" render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > snapshot.json
-```
-
-Validate snapshot:
-```sh
-cabal run cabal-plan-submit -- validate-snapshot snapshot.json
-```
-
-Explain why a package is present:
-
-```sh
-cabal run cabal-plan-submit -- why dist-newstyle/cache/plan.json cryptonite
-cabal run cabal-plan-submit -- why "$PROJECT_PATH/dist-newstyle/cache/plan.json" cryptonite
+cabal plan-submit render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > snapshot.json
 ```
 
 ## Detecting deprecated packages
@@ -131,6 +107,11 @@ Run hlint analysis:
 
 ```sh
 hlint src app test
+```
+
+Extra internal commands are show in
+```sh
+cabal run cabal-plan-submit -- --help-all
 ```
 
 ## Blog posts
