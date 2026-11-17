@@ -73,10 +73,9 @@ main = do
 runWithArgs :: [String] -> [String] -> IO ()
 runWithArgs rawArgs args =
   case args of
-    ["--help"] ->
-      putStr usage
-    ["-h"] ->
-      putStr usage
+    ["--help"] -> putStr usage
+    ["-h"] -> putStr usage
+    ["--help-all"] -> putStr usageAll
     ["--version"] ->
       putStrLn ("cabal-plan-submit " <> showVersion Paths.version)
     ["inspect-plan"] ->
@@ -504,14 +503,21 @@ usage =
     [ "Usage:"
     , "  cabal-plan-submit --help"
     , "  cabal-plan-submit --version"
-    , "  cabal-plan-submit inspect-plan [PATH_TO_PLAN_JSON]"
-    , "  cabal-plan-submit inspect-graph [PATH_TO_PLAN_JSON]"
-    , "  cabal-plan-submit inspect-locals [PATH_TO_PLAN_JSON]"
-    , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
-    , "  cabal-plan-submit validate-snapshot PATH_TO_SNAPSHOT_JSON"
-    , "  cabal-plan-submit [inspect-]deprecated [--production-only] [--fail-on none|direct|any] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
+    , "  cabal-plan-submit deprecated [--production-only] [--fail-on none|direct|any] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     , "  cabal-plan-submit why [--production-only] [PATH_TO_PLAN_JSON] PACKAGE_NAME"
-    , "  cabal-plan-submit why-tree [--production-only] [PATH_TO_PLAN_JSON] PACKAGE_NAME"
+    , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
     , "  cabal-plan-submit enrich-sarif [--production-only] PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
     , "  cabal-plan-submit deprecated-sarif [--production-only] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     ]
+
+usageAll :: String
+usageAll =
+  usage
+    <> unlines
+      [ ""
+      , "Internal tools:"
+      , "  inspect-plan [PLAN]"
+      , "  inspect-graph [PLAN]"
+      , "  inspect-locals [PLAN]"
+      , "  why-tree [--production-only] [PLAN] PACKAGE"
+      ]
