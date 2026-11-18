@@ -94,11 +94,6 @@ runWithArgs rawArgs args =
       renderSnapshot path sha ref
     ["validate-snapshot", path] ->
       validateSnapshot path
-    -- TODO pp drop this in favour of deprecated, but I have working GH workflows using this so not now
-    "inspect-deprecated" : rest ->
-      case parseInspectDeprecatedOptions rest of
-        Left err   -> dieWithArgs rawArgs err
-        Right opts -> inspectDeprecated opts
     "deprecated" : rest ->
       case parseInspectDeprecatedOptions rest of
         Left err   -> die err
@@ -506,6 +501,7 @@ usage =
     , "  cabal-plan-submit deprecated [--production-only] [--fail-on none|direct|any] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     , "  cabal-plan-submit why [--production-only] [PATH_TO_PLAN_JSON] PACKAGE_NAME"
     , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
+    , "  cabal-plan-submit validate-snapshot PATH_TO_SNAPSHOT_JSON"
     , "  cabal-plan-submit enrich-sarif [--production-only] PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
     , "  cabal-plan-submit deprecated-sarif [--production-only] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     ]
