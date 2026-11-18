@@ -106,7 +106,7 @@
 ```sh
 cabal plan-submit why test/golden/unix-time/plan.json hsc2hs
 ```
-```
+```text
 hsc2hs
 paths:
   unix-time-0.4.17 -> hsc2hs-0.68.10
@@ -117,3 +117,6 @@ paths:
 * Reject incomplete dependency graphs instead of silently dropping dependencies.
 * Stop guessing package versions and dependency scopes when evidence is missing.
 
+## 0.1.2.1 -- 2026-11-18
+
+* Remove alias for `--inspect-deprecated` (please use `deprecated` instead).
