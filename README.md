@@ -3,21 +3,25 @@
 Combine and enhance information about Haskell project:
 - vulnerability report from `cabal-audit`
 - deprecated libraries
+- cabal plan produced by `cabal`
+```sh
+cabal build all --dry-run 
+```
 
 Allows you to:
 - explain why dependencies exist
 - classify direct vs transitive dependencies
-- convert `cabal` resolved plan (`plan.json`) with depndencies to format expected by GitHub and submit it 
+- convert `cabal` resolved plan (`plan.json`) with dependencies to format expected by GitHub and submit it 
 to help with supply-chain security esp on GitHub.
 - enrich cabal-audit results in SARIF with locations and dependency paths
 
-You can extract SBOM from GH after this with this informations.
+You can extract SBOM from GH after this with these information.
 
-## Use cases
+## Use cases for CLI
 
 Assume you use project as external cabal command:
 
-1. Find deprecated Hackage dependencies and explain why they are present
+1. Find deprecated Hackage dependencies
 
 ```sh
 curl -L \
@@ -26,12 +30,16 @@ curl -L \
 cabal plan-submit deprecated
 ```
 
+2. Explain why dependency (deprecated or with know vulnerabilities found using `cabal-audit` or `osv-scanner`) are present
+
 ```sh
 cabal plan-submit why cryptonite
 cabal plan-submit why --production-only aeson
 ```
 
-2. Create and send Cabal dependency graphs to GitHub Dependency Graph (currently GH cannot do this automatically)
+## Use cases in GitHub actions
+
+3. Create dependency graphs in a format that can be sent to [GitHub API](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/use-dependency-submission-api) (currently GH cannot do this automatically)
 ```sh
 SHA="${GITHUB_SHA:-$(git rev-parse HEAD)}"
 REF="${GITHUB_REF:-refs/heads/$(git branch --show-current)}"
@@ -39,18 +47,21 @@ REF="${GITHUB_REF:-refs/heads/$(git branch --show-current)}"
 cabal run cabal-plan-submit -- render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > snapshot.json
 ```
 
+After creating and submitting data to GH data should appear in `Insights` -> `Dependency graph` in `ecosystem:other`
+e.g. as [in here](https://github.com/dancewithheart/agda2scala/network/dependencies?q=ecosystem%3Aother)
 
-3. Improve SARIF file with vulnerabilities created by `cabal-audit` so they are nicely rendered on GitHub and have
-extra information: whether dependency is transitive or direct, what paths leads to the dependency
 
-### Use in Github action
+4. Improve SARIF file with vulnerabilities created by `cabal-audit` so they are nicely rendered on GitHub and have
+extra information: whether dependency is transitive or direct, what paths leads to the dependency.
+
+```sh
+cabal audit --sarif --to-file audit.sarif
+cabal plan-submit enrich-sarif audit.sarif > enriched.sarif
+```
 
 Example [.github/workflows/submit_deps.yml](.github/workflows/submit_deps.yml).
 
-After successful build data should appear in `Insights` -> `Dependency graph` in `ecosystem:other`
-e.g. as [in here](https://github.com/dancewithheart/agda2scala/network/dependencies?q=ecosystem%3Aother)
-
-You can export SBOM (Software Bill of Materials) file on `Dependency graph` tab.
+5. You can export SBOM (Software Bill of Materials) file on `Dependency graph` tab.
 
 CI can fail when there are deprecated dependencies:
 ```sh
