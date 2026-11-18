@@ -8,6 +8,7 @@ module Hgs.Why
   , renderWhyFrom
   , renderPackagePath
   , shortestPathsToPackageFrom
+  , shortestPathsToPackageVersionFrom
   , renderWhyTrieFrom
   ) where
 
@@ -23,6 +24,7 @@ import Hgs.Domain
   , PackageSource(..)
   , PlanGraph(..)
   , UnitId
+  , Version
   )
 import Hgs.LocalUnitFilter
   ( LocalUnitFilter(..)
@@ -45,7 +47,15 @@ shortestPathsToPackage =
   shortestPathsToPackageFrom AllLocalUnits
 
 shortestPathsToPackageFrom :: LocalUnitFilter -> PackageName -> PlanGraph -> [PackagePath]
-shortestPathsToPackageFrom filterKind target graph =
+shortestPathsToPackageFrom filterKind target =
+  shortestPathsMatchingFrom filterKind ((== target) . packageName)
+
+shortestPathsToPackageVersionFrom :: LocalUnitFilter -> PackageName -> Version -> PlanGraph -> [PackagePath]
+shortestPathsToPackageVersionFrom filterKind target version =
+  shortestPathsMatchingFrom filterKind (\pkg -> packageSource pkg == PackageExternal && packageName pkg == target && packageVersion pkg == version)
+
+shortestPathsMatchingFrom :: LocalUnitFilter -> (Package -> Bool) -> PlanGraph -> [PackagePath]
+shortestPathsMatchingFrom filterKind matches graph =
   nubOn packagePathKey $
     map normalizePackagePath $
       mapMaybe pathToLocalRoot roots
@@ -59,7 +69,7 @@ shortestPathsToPackageFrom filterKind target graph =
     ]
 
   pathToLocalRoot =
-    bfs filterKind packages target
+    bfs filterKind packages matches
 
 nubOn :: Ord b => (a -> b) -> [a] -> [a]
 nubOn f =
@@ -76,8 +86,8 @@ nubOn f =
     key =
       f x
 
-bfs :: LocalUnitFilter -> Map.Map UnitId Package -> PackageName -> Package -> Maybe PackagePath
-bfs filterKind packages target root =
+bfs :: LocalUnitFilter -> Map.Map UnitId Package -> (Package -> Bool) -> Package -> Maybe PackagePath
+bfs filterKind packages matches root =
   go Set.empty (Seq.singleton [root])
  where
   go seen queue =
@@ -86,7 +96,7 @@ bfs filterKind packages target root =
         Nothing
 
       path@(pkg : _) :<| rest
-        | packageName pkg == target ->
+        | matches pkg ->
             Just (PackagePath (reverse path))
 
         | packageUnitId pkg `Set.member` seen ->

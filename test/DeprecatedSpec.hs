@@ -101,6 +101,8 @@ spec = do
               RawPlan
                 { rawPlanCabalVersion = Nothing
                 , rawPlanCompilerId = Nothing
+                , rawPlanOS = Nothing
+                , rawPlanArch = Nothing
                 , rawPlanItems =
                     [ RawPlanItem
                         { rawPlanItemType = Just "configured"
@@ -111,6 +113,7 @@ spec = do
                         , rawPlanItemComponents = []
                         , rawPlanItemExeDepends = []
                         , rawPlanItemComponentName = Nothing
+                        , rawPlanItemFlags = Nothing
                         , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
                         }
                     , RawPlanItem
@@ -122,6 +125,7 @@ spec = do
                         , rawPlanItemComponents = []
                         , rawPlanItemExeDepends = []
                         , rawPlanItemComponentName = Nothing
+                        , rawPlanItemFlags = Nothing
                         , rawPlanItemPkgSrc = Nothing
                         }
                     ]

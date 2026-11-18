@@ -64,8 +64,20 @@ cabal plan-submit inspect-graph
 `--production-only` excludes known local test and benchmark components. Edges
 with unknown component provenance are kept, so some test dependencies may
 remain. Build and setup dependencies are included; this is not a proof of
-runtime reachability. Snapshot output omits the optional `scope` field until
-runtime and development usage can be classified reliably.
+runtime code reachability. Snapshot scope is `runtime` when a primary component
+path is known, `development` when all known paths are test or benchmark paths,
+and omitted for build-only, unknown, or unreachable uses. Cabal build
+dependencies do not distinguish runtime linking from compile-time use.
+When units sharing a PURL have different uses, production edges take precedence
+in the snapshot graph. Other unit edges and their Cabal origins are retained
+in the scalar `cabal-plan-submit.unmerged-units` snapshot metadata; GitHub may
+not display those edges as dependency paths. Unknown origins are retained in
+the graph to avoid hiding possible production dependencies.
+
+Dependency locations use the plan's per-unit flags, OS, architecture and
+compiler to select conditional branches. If a required value is missing, the
+conditional location is omitted. When the same Cabal file is built with
+different flags, each unit uses its own indexed declarations.
 
 ## Create file with dependencies for GitHUB
 

@@ -11,8 +11,8 @@ import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Vector qualified as Vector
-import Hgs.CabalFileIndex (CabalLineIndex(..), DependencyDeclaration(..), buildCabalLineIndex, indexCabalFile, lookupDependencyLine)
-import Hgs.Domain (ComponentName(..), PackageName(..), PlanGraph(..), RawComponent(..), RawPkgSrc(..), RawPlan(..), RawPlanItem(..), UnitId(..))
+import Hgs.CabalFileIndex (CabalLineIndex(..), DependencyDeclaration(..), buildCabalLineIndex, indexCabalFile, indexCabalFileFor, lookupDependencyLine)
+import Hgs.Domain (BuildConfiguration(..), ComponentName(..), Package(..), PackageName(..), PlanGraph(..), RawComponent(..), RawPkgSrc(..), RawPlan(..), RawPlanItem(..), UnitId(..))
 import Hgs.LocalUnitFilter (LocalUnitFilter(..))
 import Hgs.Sarif.Enrich (enrichSarifValue)
 import Test.Hspec
@@ -22,6 +22,42 @@ import TestSupport (graphFromValidPlan, mkExternal, mkExternalWith, mkLocal, val
 spec :: Spec
 spec =
   describe "indexCabalFile" $ do
+    it "selects conditional locations using flags, platform and compiler" $ do
+      let contents = unlines
+            [ "common shared"
+            , "  build-depends: dep"
+            , "library"
+            , "  if flag(debug) && os(linux) && arch(x86_64) && impl(ghc >= 9.0)"
+            , "    import: shared"
+            , "  elif os(windows)"
+            , "    build-depends: dep"
+            , "  else"
+            , "    build-depends: dep"
+            ]
+          root = (mkLocal "root" [UnitId "dep"]) {rawPlanItemFlags = Just (Map.singleton "debug" True)}
+          graph = graphFromValidPlan (RawPlan Nothing (Just "ghc-9.12.2") (Just "linux") (Just "x86_64") [root, mkExternal "dep" "dep" "1"])
+          pkg = planGraphPackages graph Map.! UnitId "root"
+          dep = planGraphPackages graph Map.! UnitId "dep"
+          select cfg = fmap (\index -> lookupDependencyLine index "root.cabal" cfg dep) (indexCabalFileFor cfg "." "root.cabal" contents)
+          config = packageConfiguration pkg
+      select pkg `shouldBe` Right (Just 2)
+      select (pkg {packageConfiguration = config {configurationOS = Just "windows"}}) `shouldBe` Right (Just 7)
+      select (pkg {packageConfiguration = config {configurationFlags = Just (Map.singleton "debug" False)}}) `shouldBe` Right (Just 9)
+      select (pkg {packageConfiguration = config {configurationFlags = Nothing}}) `shouldBe` Right Nothing
+
+    it "does not mix conditional declarations from units with different flags" $ do
+      let contents = unlines ["library", "  if flag(debug)", "    build-depends: dep", "  else", "    build-depends: dep"]
+          root name enabled = (mkLocal name [UnitId "dep"]) {rawPlanItemFlags = Just (Map.singleton "debug" enabled)}
+          graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root "one" True, root "two" False, mkExternal "dep" "dep" "1"])
+          one = planGraphPackages graph Map.! UnitId "one"
+          two = planGraphPackages graph Map.! UnitId "two"
+          dep = planGraphPackages graph Map.! UnitId "dep"
+          indexes = (<>) <$> indexCabalFileFor one "." "root.cabal" contents <*> indexCabalFileFor two "." "root.cabal" contents
+      fmap (\index -> (lookupDependencyLine index "root.cabal" one dep, lookupDependencyLine index "root.cabal" two dep)) indexes
+        `shouldBe` Right (Just 3, Just 5)
+
+    it "selects exactly the active branch for both flag values" $
+      property prop_flagSelectsBranch
     it "ignores package names outside dependency declarations" $ do
       let contents = unlines
             [ "description:"
@@ -128,7 +164,7 @@ spec =
             { rawPlanItemComponentName = Nothing
             , rawPlanItemComponents = [RawComponent (ComponentName "test:spec") [UnitId "dep"] []]
             }
-          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+          graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root, mkExternal "dep" "dep" "1"])
           pkg = planGraphPackages graph Map.! UnitId "root"
           dep = planGraphPackages graph Map.! UnitId "dep"
       fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
@@ -141,7 +177,7 @@ spec =
             , "  build-tool-depends: dep:tool"
             ]
           root = (mkLocal "root" []) {rawPlanItemExeDepends = [UnitId "dep"]}
-          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+          graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root, mkExternal "dep" "dep" "1"])
           pkg = planGraphPackages graph Map.! UnitId "root"
           dep = planGraphPackages graph Map.! UnitId "dep"
       fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
@@ -150,7 +186,7 @@ spec =
     it "does not guess a component when the plan has no component provenance" $ do
       let contents = unlines ["library", "  build-depends: dep"]
           root = (mkLocal "root" [UnitId "dep"]) {rawPlanItemComponentName = Nothing}
-          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+          graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root, mkExternal "dep" "dep" "1"])
           pkg = planGraphPackages graph Map.! UnitId "root"
           dep = planGraphPackages graph Map.! UnitId "dep"
       fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
@@ -197,9 +233,10 @@ spec =
       let fixtureDir = "test/golden/cabal-file-index"
           root = (mkLocal "agda2scala" [UnitId "Agda-2.8.0.2"])
             { rawPlanItemPkgName = Just (PackageName "agda2scala")
+            , rawPlanItemFlags = Nothing
             , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just fixtureDir))
             }
-          graph = graphFromValidPlan $ RawPlan Nothing Nothing
+          graph = graphFromValidPlan $ RawPlan Nothing Nothing Nothing Nothing
             [ root
             , mkExternalWith "Agda-2.8.0.2" "Agda" "2.8.0.2" [UnitId "process-1.6.18.0"]
             , mkExternal "process-1.6.18.0" "process" "1.6.18.0"
@@ -233,6 +270,17 @@ indexLines :: String -> Either String (Map Text.Text Int)
 indexLines = fmap (Map.mapMaybe (Set.lookupMin . Set.map declarationLine) . Map.mapKeys (unPackageName . snd) . dependencyDeclarations)
   . indexCabalFile "." "fixture.cabal"
 
+prop_flagSelectsBranch :: Bool -> Bool
+prop_flagSelectsBranch enabled =
+  fmap (\index -> lookupDependencyLine index "root.cabal" pkg dep)
+    (indexCabalFileFor pkg "." "root.cabal" contents) == Right (Just (if enabled then 3 else 5))
+ where
+  contents = unlines ["library", "  if flag(debug)", "    build-depends: dep", "  else", "    build-depends: dep"]
+  root = (mkLocal "root" [UnitId "dep"]) {rawPlanItemFlags = Just (Map.singleton "debug" enabled)}
+  graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+  pkg = planGraphPackages graph Map.! UnitId "root"
+  dep = planGraphPackages graph Map.! UnitId "dep"
+
 prop_indexUnionLaws :: NonNegative Int -> NonNegative Int -> NonNegative Int -> Bool
 prop_indexUnionLaws a b c =
   case traverse indexFor [a, b, c] of
@@ -254,7 +302,7 @@ prop_resolvedComponent (component, expected) =
     , "test-suite spec", "  build-depends: dep"
     ]
   root = (mkLocal "root" [UnitId "dep"]) {rawPlanItemComponentName = Just (ComponentName component)}
-  graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternal "dep" "dep" "1"])
+  graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root, mkExternal "dep" "dep" "1"])
   rootPkg = planGraphPackages graph Map.! UnitId "root"
   depPkg = planGraphPackages graph Map.! UnitId "dep"
 

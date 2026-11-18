@@ -37,7 +37,7 @@ import Hgs.LocalUnitFilter (LocalUnitFilter(..), localUnitAllowed)
 import Hgs.Snapshot
   ( snapshotFromPlanGraph
   )
-import Hgs.Why (shortestPathsToPackage, shortestPathsToPackageFrom)
+import Hgs.Why (PackagePath(..), shortestPathsToPackage, shortestPathsToPackageFrom, shortestPathsToPackageVersionFrom)
 import Test.Hspec
 import Test.QuickCheck
 import TestSupport (graphFromValidPlan, SimplePlan(..), expectObject, mkExternalWith, mkLocal, simpleGraph, snapshotInput, valueKey)
@@ -45,6 +45,14 @@ import TestSupport (graphFromValidPlan, SimplePlan(..), expectObject, mkExternal
 spec :: Spec
 spec = do
   describe "decodeRawPlan" $ do
+    it "retains the resolved platform, compiler and per-unit flags" $ do
+      bytes <- BS.readFile "test/golden/persistent/plan.json"
+      plan <- either (\err -> expectationFailure err >> fail "invalid fixture") pure (decodeRawPlan bytes)
+      rawPlanOS plan `shouldBe` Just "linux"
+      rawPlanArch plan `shouldBe` Just "x86_64"
+      rawPlanCompilerId plan `shouldBe` Just "ghc-9.12.2"
+      let vectorFlags = [flags | item <- rawPlanItems plan, rawPlanItemPkgName item == Just (PackageName "vector"), Just flags <- [rawPlanItemFlags item]]
+      vectorFlags `shouldSatisfy` any ((== Just True) . Map.lookup "boundschecks")
     it "requires an install-plan array while allowing an empty one" $ do
       map decodeRawPlan ["{}", "{\"install-plan\":null}", "{\"install-plan\":{}}"]
         `shouldSatisfy` all isLeft
@@ -155,9 +163,10 @@ spec = do
               , rawPlanItemComponents = []
               , rawPlanItemExeDepends = []
               , rawPlanItemComponentName = Nothing
+              , rawPlanItemFlags = Nothing
               , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "packages/local"))
               }
-          plan = RawPlan Nothing Nothing [local]
+          plan = RawPlan Nothing Nothing Nothing Nothing [local]
           packages = planGraphPackages (graphFromValidPlan plan)
       fmap packageSourcePath (Map.lookup (UnitId "local-1") packages)
         `shouldBe` Just (Just "packages/local")
@@ -234,9 +243,21 @@ spec = do
             `shouldBe` Just True
 
   describe "extractPlanGraph" $ do
+    it "finds a longer path to the requested version when another version is nearer" $ do
+      let graph = graphFromValidPlan $ RawPlan Nothing Nothing Nothing Nothing
+            [ mkLocal "root" [UnitId "old", UnitId "via"]
+            , mkExternalWith "old" "shared" "1" []
+            , mkExternalWith "via" "via" "1" [UnitId "new"]
+            , mkExternalWith "new" "shared" "2" []
+            ]
+          paths = shortestPathsToPackageVersionFrom AllLocalUnits (PackageName "shared") (Version "2") graph
+      map (map packageVersion . unPackagePath) paths `shouldBe` [[Version "0.1.0.0", Version "1", Version "2"]]
+
+    it "returns only paths ending at the requested package version" $
+      property prop_versionedPaths
     it "rejects an unknown build-tool edge instead of silently dropping it" $ do
       let item = (mkLocal "root" []) {rawPlanItemExeDepends = [UnitId "missing-tool"]}
-      extractPlanGraph (RawPlan Nothing Nothing [item])
+      extractPlanGraph (RawPlan Nothing Nothing Nothing Nothing [item])
         `shouldBe` Left (UnknownDependency (UnitId "root") (UnitId "missing-tool"))
 
     it "marks direct external dependencies from local packages" $ do
@@ -250,6 +271,7 @@ spec = do
               , rawPlanItemComponents = []
               , rawPlanItemExeDepends = []
               , rawPlanItemComponentName = Nothing
+              , rawPlanItemFlags = Nothing
               , rawPlanItemPkgSrc = Just (RawPkgSrc (Just "local") (Just "."))
               }
 
@@ -263,6 +285,7 @@ spec = do
               , rawPlanItemComponents = []
               , rawPlanItemExeDepends = []
               , rawPlanItemComponentName = Nothing
+              , rawPlanItemFlags = Nothing
               , rawPlanItemPkgSrc = Nothing
               }
 
@@ -276,6 +299,7 @@ spec = do
               , rawPlanItemComponents = []
               , rawPlanItemExeDepends = []
               , rawPlanItemComponentName = Nothing
+              , rawPlanItemFlags = Nothing
               , rawPlanItemPkgSrc = Nothing
               }
 
@@ -289,6 +313,7 @@ spec = do
               , rawPlanItemComponents = []
               , rawPlanItemExeDepends = []
               , rawPlanItemComponentName = Nothing
+              , rawPlanItemFlags = Nothing
               , rawPlanItemPkgSrc = Nothing
               }
 
@@ -297,6 +322,8 @@ spec = do
               RawPlan
                 { rawPlanCabalVersion = Nothing
                 , rawPlanCompilerId = Nothing
+                , rawPlanOS = Nothing
+                , rawPlanArch = Nothing
                 , rawPlanItems = [localPkg, aesonPkg, textPkg, bytestringPkg]
                 }
 
@@ -322,11 +349,11 @@ spec = do
 
     it "retains unknown component provenance instead of hiding a possible production path" $ do
       let root = (mkLocal "root-test" [UnitId "dep"]) {rawPlanItemComponentName = Nothing}
-          graph = graphFromValidPlan (RawPlan Nothing Nothing [root, mkExternalWith "dep" "dep" "1" []])
+          graph = graphFromValidPlan (RawPlan Nothing Nothing Nothing Nothing [root, mkExternalWith "dep" "dep" "1" []])
       shortestPathsToPackageFrom ProductionLocalUnits (PackageName "dep") graph `shouldSatisfy` (not . null)
 
   describe "extractPlanGraphChecked" $ do
-    let plan = RawPlan Nothing Nothing
+    let plan = RawPlan Nothing Nothing Nothing Nothing
         root = mkLocal "root"
         dependency = mkExternalWith "dep" "dep" "1"
 
@@ -416,7 +443,7 @@ spec = do
           entry = expectObject (valueKey hspecPurl resolved)
       Map.lookup (packageUnitId hspecPkg) (packageDependencies root)
         `shouldBe` Just (Set.singleton (DependencyOrigin (Just (ComponentName "test:spec")) ComponentDependency))
-      KeyMap.lookup "scope" entry `shouldBe` Nothing
+      KeyMap.lookup "scope" entry `shouldBe` Just (Aeson.String "development")
 
     it "excludes unix-time's test-only hspec from production paths" $ do
       graph <- graphFromFixture "test/golden/unix-time/plan.json"
@@ -541,6 +568,7 @@ prop_snapshotDependenciesStayInsideResolved (SimplePlan rawPlan) =
       [ Key.toText k
       | k <- KeyMap.keys resolved
       ]
+
   resolvedEntries =
     KeyMap.elems resolved
 
@@ -556,3 +584,16 @@ prop_snapshotDependenciesStayInsideResolved (SimplePlan rawPlan) =
             False
       _ ->
         False
+
+prop_versionedPaths :: SimplePlan -> Bool
+prop_versionedPaths (SimplePlan raw) = all matches paths
+ where
+  graph = graphFromValidPlan raw
+  paths =
+    [ ((packageName pkg, packageVersion pkg), path)
+    | pkg <- Map.elems (planGraphPackages graph)
+    , path <- shortestPathsToPackageVersionFrom AllLocalUnits (packageName pkg) (packageVersion pkg) graph
+    ]
+  matches (key, PackagePath packages) = case reverse packages of
+    [] -> False
+    target : _ -> (packageName target, packageVersion target) == key

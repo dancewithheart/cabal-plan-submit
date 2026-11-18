@@ -43,6 +43,7 @@ executable cabal-plan-submit
   other-modules:
     Hgs.CabalFileIndex
     Hgs.Deprecated
+    Hgs.DependencyUsage
     Hgs.Domain
     Hgs.Sarif.Common
     Hgs.Sarif.Deprecated
@@ -53,6 +54,7 @@ executable cabal-plan-submit
     Hgs.Paths
     Hgs.PathTrie
     Hgs.PrettyPrint
+    Hgs.Reachability
     Hgs.Snapshot
     Hgs.Validate
     Hgs.Input.PlanJson
@@ -89,6 +91,7 @@ test-suite plan-json-test
   other-modules:
       Hgs.CabalFileIndex
       Hgs.Deprecated
+      Hgs.DependencyUsage
       Hgs.Domain
       Hgs.Extract
       Hgs.Input.PlanJson
@@ -97,6 +100,7 @@ test-suite plan-json-test
       Hgs.Paths
       Hgs.PathTrie
       Hgs.PrettyPrint
+      Hgs.Reachability
       Hgs.Sarif.Common
       Hgs.Sarif.Deprecated
       Hgs.Sarif.Enrich
@@ -106,6 +110,7 @@ test-suite plan-json-test
       CabalFileIndexSpec
       GoldenSpec
       DeprecatedSpec
+      DependencyUsageSpec
       LocalsSpec
       PathTrieSpec
       PlanJsonSpec
