@@ -58,7 +58,7 @@ spec = do
 
   describe "golden use cases" $ do
     golden
-      "inspect-deprecated --production-only reports old-time in unix-time"
+      "deprecated --production-only reports old-time in unix-time"
       "test/golden/unix-time/inspect-deprecated-production.golden"
       (renderInspectDeprecatedProductionOnly "test/golden/unix-time/plan.json" "test/golden/deprecated.yaml")
 
