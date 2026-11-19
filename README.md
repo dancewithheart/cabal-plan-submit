@@ -1,115 +1,104 @@
 # cabal-plan-submit
 
-Haskell dependency intelligence for supply-chain security.
-- submit `cabal` resolved plan (`plan.json`) with depndencies to GitHub (you can extract SBOM from GH after this)
-- explain dependency paths with `why`
+Combine and enhance information about Haskell project:
+- vulnerability report from `cabal-audit`
+- deprecated libraries
+- cabal plan produced by `cabal`
+```sh
+cabal build all --dry-run 
+```
+
+Allows you to:
+- explain why dependencies exist
 - classify direct vs transitive dependencies
-- inspect deprecated Hackage packages
-- enrich cabal-audit SARIF with locations and dependency-path metadata
+- convert `cabal` resolved plan (`plan.json`) with dependencies to format expected by GitHub and submit it 
+to help with supply-chain security esp on GitHub.
+- enrich cabal-audit results in SARIF with locations and dependency paths
 
-## What it does
+You can extract SBOM from GH after this with these information.
 
-`cabal-plan-submit` reads Cabal's `dist-newstyle/cache/plan.json` and helps with three practical workflows:
+## Use cases for CLI
 
-1. Find deprecated Hackage dependencies and explain why they are present
-```sh
-cabal run cabal-plan-submit -- why dist-newstyle/cache/plan.json cryptonite
-cabal run cabal-plan-submit -- why $PROJECT_PATH/dist-newstyle/cache/plan.json process
-```
+Assume you use project as external cabal command:
 
-2. Submit Cabal dependency graphs to GitHub Dependency Graph
-```sh
-cabal run cabal-plan-submit -- render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > snapshot.json
-```
-
-3. Improve SARIF file with vulnerabilities created by `cabal-audit` so they are nicely rendered on GitHub and have
-extra information: whether dependency is transitive or direct, what paths leads to the dependency
-
-## Use in Github Action
-
-To run this action on Github you can re-use config ([.github/workflows/submit_deps.yml](.github/workflows/submit_deps.yml)):
-
-After successful build data should apperar in `Insights` -> `Dependency graph` in `ecosystem:other`
-e.g. as [in here](https://github.com/dancewithheart/agda2scala/network/dependencies?q=ecosystem%3Aother)
-
-You can export SBOM (Software Bill of Materials) file on `Dependency graph` tab.
-
-Fail CI on deprecated dependencies:
+1. Find deprecated Hackage dependencies
 
 ```sh
-cabal-plan-submit inspect-deprecated dist-newstyle/cache/plan.json deprecated.yaml
-```
-
-## Usage as cabal command
-
-Download source code and install as an [external cabal command](https://discourse.haskell.org/t/an-external-command-system-for-cabal-what-would-you-do-with-it/7114):
-```sh
-cabal install exe:cabal-plan-submit --overwrite-policy=always
-```
-
-usage:
-```sh
-cabal plan-submit why aeson
-cabal plan-submit why --production-only aeson
-
 curl -L \
   https://raw.githubusercontent.com/commercialhaskell/all-cabal-metadata/master/deprecated.yaml \
   -o deprecated.yaml
 cabal plan-submit deprecated
-
-cabal plan-submit inspect-plan
-cabal plan-submit inspect-graph
 ```
 
-`--production-only` excludes known local test and benchmark components. Edges
-with unknown component provenance are kept, so some test dependencies may
-remain. Build and setup dependencies are included; this is not a proof of
-runtime reachability. Snapshot output omits the optional `scope` field until
-runtime and development usage can be classified reliably.
+2. Explain why dependency (deprecated or with know vulnerabilities found using `cabal-audit` or `osv-scanner`) are present
 
-## Create file with dependencies for GitHUB
-
-Create JSON with dependencies in format suitable for GitHub (snapshot file):
+```sh
+cabal plan-submit why cryptonite
+cabal plan-submit why --production-only aeson
 ```
+
+## Use cases in GitHub actions
+
+3. Create dependency graphs in a format that can be sent to [GitHub API](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/use-dependency-submission-api) (currently GH cannot do this automatically)
+```sh
 SHA="${GITHUB_SHA:-$(git rev-parse HEAD)}"
 REF="${GITHUB_REF:-refs/heads/$(git branch --show-current)}"
 
-cabal plan-submit render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > snapshot.json
+cabal run cabal-plan-submit -- render-snapshot dist-newstyle/cache/plan.json "$SHA" "$REF" > snapshot.json
 ```
 
-## Detecting deprecated packages
+After creating and submitting data to GH data should appear in `Insights` -> `Dependency graph` in `ecosystem:other`
+e.g. as [in here](https://github.com/dancewithheart/agda2scala/network/dependencies?q=ecosystem%3Aother)
+
+
+4. Improve SARIF file with vulnerabilities created by `cabal-audit` so they are nicely rendered on GitHub and have
+extra information: whether dependency is transitive or direct, what paths leads to the dependency.
 
 ```sh
-curl -L \
-  https://raw.githubusercontent.com/commercialhaskell/all-cabal-metadata/master/deprecated.yaml \
-  -o deprecated.yaml
-
-cabal run cabal-plan-submit -- inspect-deprecated dist-newstyle/cache/plan.json deprecated.yaml
-cabal run cabal-plan-submit -- inspect-deprecated "$PROJECT_PATH/dist-newstyle/cache/plan.json" deprecated.yaml
+cabal audit --sarif --to-file audit.sarif
+cabal plan-submit enrich-sarif audit.sarif > enriched.sarif
 ```
 
-## Relationship to Renovate / Dependabot / cabal-audit
+Example [.github/workflows/submit_deps.yml](.github/workflows/submit_deps.yml).
 
-- `Renovate` can update declared `.cabal` dependency bounds.
-- `cabal-audit` checks known Haskell security advisories.
-- `cabal-plan-submit` works from Cabal's solved `plan.json`, submits the exact resolved graph to GitHub, and explains deprecated dependencies with paths.
+5. You can export SBOM (Software Bill of Materials) file on `Dependency graph` tab.
 
-## Working with code
+CI can fail when there are deprecated dependencies:
+```sh
+cabal-plan-submit deprecated --fail-on direct dist-newstyle/cache/plan.json deprecated.yaml
+```
 
-Running tests (first command generate golden tests):
+### CLI usage as cabal command
 
+You can download project build it
+```sh
+cabal install exe:cabal-plan-submit --overwrite-policy=always
+```
+and run it from directory you downloaded and point to target project:
+```sh
+cabal run cabal-plan-submit -- why $PROJECT_PATH/dist-newstyle/cache/plan.json cryptonite
+cabal run cabal-plan-submit -- deprecated dist-newstyle/cache/plan.json deprecated.yaml
+```
+
+or run as [external cabal command](https://discourse.haskell.org/t/an-external-command-system-for-cabal-what-would-you-do-with-it/7114):
+```sh
+cabal plan-submit why cryptonite
+```
+
+## Dev notes
+
+Tests (first command generate golden tests):
 ```sh
 UPDATE_GOLDEN=1 cabal test
 cabal test
 ```
 
-Run hlint analysis:
-
+Static code analysis:
 ```sh
 hlint src app test
 ```
 
-Extra internal commands are show in
+Show diagnostic commands:
 ```sh
 cabal run cabal-plan-submit -- --help-all
 ```

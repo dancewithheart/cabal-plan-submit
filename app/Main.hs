@@ -1,6 +1,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Main (main) where
 
@@ -16,6 +17,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Time.Clock (getCurrentTime)
 import Data.Version (showVersion)
+import Development.GitRev (gitHash)
 import Paths_cabal_plan_submit qualified as Paths
 import System.Directory (doesFileExist, listDirectory)
 import System.Environment (getArgs)
@@ -77,7 +79,7 @@ runWithArgs rawArgs args =
     ["-h"] -> putStr usage
     ["--help-all"] -> putStr usageAll
     ["--version"] ->
-      putStrLn ("cabal-plan-submit " <> showVersion Paths.version)
+      putStrLn buildVersion
     ["inspect-plan"] ->
       inspectPlan defaultPlanJsonPath
     ["inspect-plan", path] ->
@@ -94,11 +96,6 @@ runWithArgs rawArgs args =
       renderSnapshot path sha ref
     ["validate-snapshot", path] ->
       validateSnapshot path
-    -- TODO pp drop this in favour of deprecated, but I have working GH workflows using this so not now
-    "inspect-deprecated" : rest ->
-      case parseInspectDeprecatedOptions rest of
-        Left err   -> dieWithArgs rawArgs err
-        Right opts -> inspectDeprecated opts
     "deprecated" : rest ->
       case parseInspectDeprecatedOptions rest of
         Left err   -> die err
@@ -138,6 +135,14 @@ runWithArgs rawArgs args =
             (deprecatedSarifPlanPath opts)
             (deprecatedSarifMetadataPath opts)
     _ -> dieWithArgs rawArgs usage
+
+buildVersion :: String
+buildVersion = "cabal-plan-submit " <> showVersion Paths.version <> revision
+ where
+  hash = $(gitHash)
+  revision
+    | hash == "UNKNOWN" = ""
+    | otherwise = " (" <> take 8 hash <> ")"
 
 defaultPlanJsonPath :: FilePath
 defaultPlanJsonPath = "dist-newstyle/cache/plan.json"
@@ -506,6 +511,7 @@ usage =
     , "  cabal-plan-submit deprecated [--production-only] [--fail-on none|direct|any] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     , "  cabal-plan-submit why [--production-only] [PATH_TO_PLAN_JSON] PACKAGE_NAME"
     , "  cabal-plan-submit render-snapshot PATH_TO_PLAN_JSON SHA REF"
+    , "  cabal-plan-submit validate-snapshot PATH_TO_SNAPSHOT_JSON"
     , "  cabal-plan-submit enrich-sarif [--production-only] PATH_TO_PLAN_JSON PATH_TO_SARIF_JSON"
     , "  cabal-plan-submit deprecated-sarif [--production-only] [--ignore-package PACKAGE]... PATH_TO_PLAN_JSON PATH_TO_DEPRECATED_YAML"
     ]

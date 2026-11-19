@@ -99,14 +99,15 @@
 ## 0.1.1.2 -- 2026-10-29
 
 * Add validation so invalid dependencies are not silently discarded.
+* Improve SARIF locations by parsing Cabal dependencies, including common stanzas. ([#22](https://github.com/dancewithheart/cabal-plan-submit/issues/22))
 
 ## 0.1.2.0 -- 2026-10-31
 
-* Find previously missing dependencies, including build tools such as `hsc2hs`.
+* Includes build tools dependencies such as `hsc2hs`.
 ```sh
 cabal plan-submit why test/golden/unix-time/plan.json hsc2hs
 ```
-```
+```text
 hsc2hs
 paths:
   unix-time-0.4.17 -> hsc2hs-0.68.10
@@ -117,3 +118,8 @@ paths:
 * Reject incomplete dependency graphs instead of silently dropping dependencies.
 * Stop guessing package versions and dependency scopes when evidence is missing.
 
+## 0.1.2.1 -- 2026-11-18
+
+* Remove the `inspect-deprecated` alias; use `deprecated` instead.
+* Move internal commands from `--help` to `--help-all`.
+* Add git hash to `--version` now show sth like: `cabal-plan-submit 0.1.1.3 (99bb44e2)`.
