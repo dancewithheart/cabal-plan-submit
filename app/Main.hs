@@ -1,6 +1,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Main (main) where
 
@@ -16,6 +17,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Time.Clock (getCurrentTime)
 import Data.Version (showVersion)
+import Development.GitRev (gitHash)
 import Paths_cabal_plan_submit qualified as Paths
 import System.Directory (doesFileExist, listDirectory)
 import System.Environment (getArgs)
@@ -77,7 +79,7 @@ runWithArgs rawArgs args =
     ["-h"] -> putStr usage
     ["--help-all"] -> putStr usageAll
     ["--version"] ->
-      putStrLn ("cabal-plan-submit " <> showVersion Paths.version)
+      putStrLn buildVersion
     ["inspect-plan"] ->
       inspectPlan defaultPlanJsonPath
     ["inspect-plan", path] ->
@@ -133,6 +135,14 @@ runWithArgs rawArgs args =
             (deprecatedSarifPlanPath opts)
             (deprecatedSarifMetadataPath opts)
     _ -> dieWithArgs rawArgs usage
+
+buildVersion :: String
+buildVersion = "cabal-plan-submit " <> showVersion Paths.version <> revision
+ where
+  hash = $(gitHash)
+  revision
+    | hash == "UNKNOWN" = ""
+    | otherwise = " (" <> take 8 hash <> ")"
 
 defaultPlanJsonPath :: FilePath
 defaultPlanJsonPath = "dist-newstyle/cache/plan.json"
