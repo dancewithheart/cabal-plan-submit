@@ -100,3 +100,20 @@
 
 * Add validation so invalid dependencies are not silently discarded.
 
+## 0.1.2.0 -- 2026-10-31
+
+* Find previously missing dependencies, including build tools such as `hsc2hs`.
+```sh
+cabal plan-submit why test/golden/unix-time/plan.json hsc2hs
+```
+```
+hsc2hs
+paths:
+  unix-time-0.4.17 -> hsc2hs-0.68.10
+```
+* Improve `--production-only` filtering using Cabal component information.
+* Show more accurate `.cabal` locations for security findings while preserving
+  their original severity and details.
+* Reject incomplete dependency graphs instead of silently dropping dependencies.
+* Stop guessing package versions and dependency scopes when evidence is missing.
+
