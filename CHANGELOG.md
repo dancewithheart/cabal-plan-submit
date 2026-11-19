@@ -122,3 +122,4 @@ paths:
 
 * Remove the `inspect-deprecated` alias; use `deprecated` instead.
 * Move internal commands from `--help` to `--help-all`.
+* Add git hash to `--version` now show sth like: `cabal-plan-submit 0.1.1.3 (99bb44e2)`.
